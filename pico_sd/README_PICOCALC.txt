@@ -6,6 +6,7 @@ no computer needed after this one-time setup.
 
 WHAT'S HERE
   rpts_boot.py         app launcher (runs from the SD card)
+  setup_go.py          optional one-time setup for the short "import go"
   py/rpts/             app source code
   mpy/rpts/            precompiled version (used automatically if the
                        firmware accepts it; otherwise py/ is used)
@@ -22,14 +23,23 @@ HOW TO LAUNCH (each boot)
 
   4. The app opens. Confirm the date when asked. Train.
 
-  That is the whole launch: one line, each boot. The first part puts the
-  SD card on the import path (it is NOT there by default), the second
-  starts the app. A bare "import rpts_boot" only works if you already ran
-  that line earlier in the same session. Loads only from the SD card (safe
+  The first part puts the SD card on the import path (it is NOT there by
+  default), the second starts the app. Loads only from the SD card (safe
   and fast). Your BASIC, NES, MicroPython, etc. stay in the same boot menu.
 
-  TIP: if a plain "import rpts_boot" gives "no module named 'rpts_boot'",
-  you skipped the sys.path.insert part - type the full line above.
+WANT A SHORTER DAILY COMMAND?  (optional, one-time)
+  Run this once at the >>> prompt:
+
+     import sys; sys.path.insert(0,'/sd'); import setup_go
+
+  It writes a tiny launcher to the Pico's internal memory. NOTE: the screen
+  may briefly FREEZE while it writes - that's expected; just reset once if
+  it does. After that, launch any time by just typing:
+
+     import go
+
+  TIP: if "import rpts_boot" gives "no module named 'rpts_boot'", you
+  skipped the sys.path.insert part - type the full line in step 3.
 
 WHY NOT FULLY AUTOMATIC?
   This firmware bakes its own startup files into the image, so it ignores
