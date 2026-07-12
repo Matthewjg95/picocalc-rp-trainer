@@ -47,15 +47,18 @@ python tools/build_sd.py        # produces build/sd/ (py + precompiled mpy)
 ```
 
 To launch, each boot: pick **RP_Training_System** (or `MicroPython`) in the
-bootloader menu, then at the `>>>` prompt type:
+bootloader menu, then at the `>>>` prompt type this line (it puts the SD
+card on the import path, then starts the app):
 
 ```
-import rpts_boot
+import sys; sys.path.insert(0, '/sd'); import rpts_boot
 ```
 
-That one line is the daily launch (the firmware already has `/sd` on its
-import path). It reads only from the SD card, so it's safe and fast. The
-stock BASIC/NES/etc. firmwares stay available in the same boot menu.
+That is the daily launch — one line, per boot. `/sd` is *not* on the
+import path by default, so the `sys.path.insert` is required; a bare
+`import rpts_boot` only works if you've already run that setup earlier in
+the same session. It reads only from the SD card, so it's safe and fast.
+The stock BASIC/NES/etc. firmwares stay available in the same boot menu.
 
 **Why not auto-start?** This firmware bakes its own `boot.py`/`main.py`
 into the image, so a filesystem `/main.py` is ignored — filesystem

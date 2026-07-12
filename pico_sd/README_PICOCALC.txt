@@ -18,13 +18,18 @@ HOW TO LAUNCH (each boot)
      (listed alongside MicroPython, NES, etc.)
   3. At the MicroPython >>> prompt, type exactly and press Enter:
 
-     import rpts_boot
+     import sys; sys.path.insert(0,'/sd'); import rpts_boot
 
   4. The app opens. Confirm the date when asked. Train.
 
-  That one line is all you type. It loads only from the SD card (safe and
-  fast). Your BASIC, NES, MicroPython, etc. stay selectable in the same
-  boot menu whenever you like.
+  That is the whole launch: one line, each boot. The first part puts the
+  SD card on the import path (it is NOT there by default), the second
+  starts the app. A bare "import rpts_boot" only works if you already ran
+  that line earlier in the same session. Loads only from the SD card (safe
+  and fast). Your BASIC, NES, MicroPython, etc. stay in the same boot menu.
+
+  TIP: if a plain "import rpts_boot" gives "no module named 'rpts_boot'",
+  you skipped the sys.path.insert part - type the full line above.
 
 WHY NOT FULLY AUTOMATIC?
   This firmware bakes its own startup files into the image, so it ignores
