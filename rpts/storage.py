@@ -1,0 +1,309 @@
+"""JSON persistence: atomic autosave, rotating backups, CSV export/import.
+
+Runs on CPython and MicroPython. Two features keep RAM bounded on the
+PicoCalc's microcontroller:
+
+  * records cache — per-exercise bests, lifetime tonnage and weekly-best
+    tonnage are folded into `data["records"]` as sessions complete, so PR
+    detection never needs the full history in memory.
+  * history archive — the live DB holds only the most recent
+    `archive_keep` sessions; older ones are appended to an append-only
+    JSONL file on disk (streamed, never loaded whole).
+"""
+import json
+import os
+
+from . import compat, programs
+from .compat import (csv_row, csv_split, exists, listdir_sorted, makedirs,
+                     pjoin, replace, today, week_key)
+
+
+def default_data():
+    return {
+        "version": 2,
+        "athlete": {
+            "name": "Athlete", "age": 30, "sex": "M", "height_in": 70.0,
+            "bodyweight": 180.0, "goal_weight": 185.0,
+            "experience": "intermediate",  # beginner/intermediate/advanced
+            "injuries": "",
+            "equipment": ["barbell", "dumbbell", "machine", "cable",
+                          "bodyweight"],
+        },
+        "settings": {
+            "units": "lb", "theme": "phosphor", "charset": "unicode",
+            "graph_detail": "high",  # high/low -> sparkline width
+            "coach_verbosity": "normal",  # terse/normal/verbose
+            "rest_target": 120,
+        },
+        "goals": {
+            "type": "hypertrophy",  # strength/hypertrophy/weight loss/recomp/custom
+            "note": "",
+        },
+        "program": programs.make_program("Upper Lower"),
+        "meso": {"number": 1, "week": 1, "weeks": 6, "day_index": 0,
+                 "started": today()},
+        # exercise -> {"weight": float, "sets": int} — the coach's current
+        # working prescription, updated by auto-regulation after sessions.
+        "prescriptions": {},
+        "records": empty_records(),
+        "history": [],         # recent completed sessions (older -> archive)
+        "bodyweight_log": [],  # {"date", "weight"}
+        "swaps": [],           # {"date", "from", "to", "reason"}
+    }
+
+
+def empty_records():
+    return {"ex": {}, "lifetime": 0.0, "best_week": 0.0,
+            "cur_week_key": "", "cur_week": 0.0, "n_sessions": 0}
+
+
+class DB:
+    def __init__(self, data_dir, archive_keep=200):
+        self.dir = data_dir
+        self.archive_keep = archive_keep
+        self.path = pjoin(data_dir, "rpts_data.json")
+        self.archive_path = pjoin(data_dir, "history_archive.jsonl")
+        self.backup_dir = pjoin(data_dir, "backups")
+        self.data = default_data()
+
+    # -- load / save ------------------------------------------------------
+    def load(self):
+        if exists(self.path):
+            with open(self.path, "r") as f:
+                loaded = json.load(f)
+            base = default_data()
+            base.update(loaded)  # forward-compatible: new keys get defaults
+            self.data = base
+            if not self.data.get("records", {}).get("n_sessions") and \
+                    self.data["history"]:
+                self.rebuild_records()
+        else:
+            makedirs(self.dir)
+            self.save()
+        return self
+
+    def save(self):
+        makedirs(self.dir)
+        tmp = self.path + ".tmp"
+        with open(tmp, "w") as f:
+            compat.json_dump(self.data, f)
+        replace(tmp, self.path)
+
+    def backup(self):
+        makedirs(self.backup_dir)
+        dest = pjoin(self.backup_dir, "rpts_%s.json" % compat.stamp())
+        self.save()
+        compat.copyfile(self.path, dest)
+        backups = listdir_sorted(self.backup_dir)
+        for old in backups[:-20]:  # keep the 20 most recent
+            compat.remove_quiet(pjoin(self.backup_dir, old))
+        return dest
+
+    def restore_latest_backup(self):
+        backups = listdir_sorted(self.backup_dir)
+        if not backups:
+            return None
+        src = pjoin(self.backup_dir, backups[-1])
+        with open(src, "r") as f:
+            self.data = json.load(f)
+        self.save()
+        return src
+
+    # -- records cache -----------------------------------------------------
+    def update_records(self, session):
+        """Fold a completed session into the incremental records cache.
+        Must be called AFTER PR detection (which compares against the
+        cache as it stood before this session)."""
+        rec = self.data["records"]
+        ton_session = 0.0
+        for e in session.get("entries", []):
+            sets = e.get("sets", [])
+            if not sets:
+                continue
+            name = e["exercise"]
+            r = rec["ex"].setdefault(name, {
+                "e1rm": 0.0, "e1rm_date": "", "reps": 0,
+                "reps_weight": 0.0, "tonnage": 0.0})
+            ton = 0.0
+            for st in sets:
+                w = st.get("weight", 0)
+                n = st.get("reps", 0)
+                ton += w * n
+                total = n + max(0.0, st.get("rir", 0))
+                e1 = w * (1 + total / 30.0) if total > 1 else float(w)
+                if n > 0 and e1 > r["e1rm"]:
+                    r["e1rm"] = e1
+                    r["e1rm_date"] = session["date"]
+                if (w, n) > (r["reps_weight"], r["reps"]):
+                    r["reps_weight"], r["reps"] = w, n
+            if ton > r["tonnage"]:
+                r["tonnage"] = ton
+            ton_session += ton
+        rec["lifetime"] += ton_session
+        wk = week_key(session["date"])
+        if wk != rec["cur_week_key"]:
+            if rec["cur_week"] > rec["best_week"]:
+                rec["best_week"] = rec["cur_week"]
+            rec["cur_week_key"] = wk
+            rec["cur_week"] = 0.0
+        rec["cur_week"] += ton_session
+        rec["n_sessions"] += 1
+
+    def rebuild_records(self):
+        """Replay archive (streamed) + live history into a fresh cache."""
+        self.data["records"] = empty_records()
+        if exists(self.archive_path):
+            with open(self.archive_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        self.update_records(json.loads(line))
+        for s in self.data["history"]:
+            self.update_records(s)
+
+    # -- history archive ------------------------------------------------------
+    def archive_old(self):
+        """Move the oldest live sessions to the on-disk archive so RAM
+        stays bounded. Also trims the bodyweight log."""
+        hist = self.data["history"]
+        if len(hist) > self.archive_keep:
+            makedirs(self.dir)
+            with open(self.archive_path, "a") as f:
+                while len(hist) > self.archive_keep:
+                    f.write(json.dumps(hist.pop(0)))
+                    f.write("\n")
+        bw = self.data["bodyweight_log"]
+        if len(bw) > 400:
+            del bw[: len(bw) - 400]
+
+    def iter_all_sessions(self):
+        """Every session ever, oldest first, archive streamed from disk."""
+        if exists(self.archive_path):
+            with open(self.archive_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        yield json.loads(line)
+        for s in self.data["history"]:
+            yield s
+
+    # -- CSV --------------------------------------------------------------
+    CSV_FIELDS = ["date", "week", "day", "exercise", "set", "weight",
+                  "reps", "rir", "pain", "difficulty", "notes"]
+
+    def export_csv(self, path=None):
+        path = path or pjoin(self.dir, "rpts_export.csv")
+        with open(path, "w") as f:
+            f.write(csv_row(self.CSV_FIELDS) + "\n")
+            for s in self.iter_all_sessions():
+                for entry in s.get("entries", []):
+                    i = 0
+                    for st in entry.get("sets", []):
+                        i += 1
+                        f.write(csv_row([
+                            s["date"], s.get("week", ""), s.get("day", ""),
+                            entry["exercise"], i, st.get("weight", ""),
+                            st.get("reps", ""), st.get("rir", ""),
+                            st.get("pain", ""), st.get("difficulty", ""),
+                            st.get("notes", ""),
+                        ]) + "\n")
+        return path
+
+    def import_csv(self, path):
+        """Merge externally logged sets into history as imported sessions."""
+        sessions = {}
+        with open(path, "r") as f:
+            header = None
+            for line in f:
+                line = line.rstrip("\r\n")
+                if not line:
+                    continue
+                cells = csv_split(line)
+                if header is None:
+                    header = [c.strip().lower() for c in cells]
+                    continue
+                row = {}
+                for i, name in enumerate(header):
+                    row[name] = cells[i] if i < len(cells) else ""
+                date = (row.get("date") or "").strip()
+                ex = (row.get("exercise") or "").strip()
+                if not date or not ex:
+                    continue
+                s = sessions.setdefault(date, {
+                    "date": date, "week": 0, "day": "Imported",
+                    "entries": [], "checkin": {}, "post": {},
+                    "completed": True, "imported": True,
+                })
+                entry = None
+                for e in s["entries"]:
+                    if e["exercise"] == ex:
+                        entry = e
+                        break
+                if entry is None:
+                    entry = {"exercise": ex, "target_sets": 0,
+                             "target_reps": [0, 0], "target_rir": 2,
+                             "sets": []}
+                    s["entries"].append(entry)
+                try:
+                    entry["sets"].append({
+                        "weight": float(row.get("weight") or 0),
+                        "reps": int(float(row.get("reps") or 0)),
+                        "rir": float(row.get("rir") or 2),
+                        "pain": float(row.get("pain") or 0),
+                        "difficulty": float(row.get("difficulty") or 5),
+                        "notes": row.get("notes") or "",
+                    })
+                except ValueError:
+                    continue
+        existing = set()
+        for s in self.data["history"]:
+            if s.get("imported"):
+                existing.add(s["date"])
+        added = 0
+        for date in sorted(sessions):
+            if date not in existing:
+                s = sessions[date]
+                self.data["history"].append(s)
+                self.update_records(s)
+                added += 1
+        self.data["history"].sort(key=lambda s: s["date"])
+        self.archive_old()
+        self.save()
+        return added
+
+    # -- unit conversion --------------------------------------------------
+    def convert_units(self, new_units):
+        """Convert every stored load when the units setting flips.
+        (Archived history keeps its original units; the archive stores
+        raw logs and the units they were logged in matter only for the
+        live analytics window.)"""
+        old = self.data["settings"]["units"]
+        if new_units == old:
+            return
+        k = 0.45359237 if new_units == "kg" else 1 / 0.45359237
+
+        def rnd(v):
+            return round(v * k, 1)
+
+        a = self.data["athlete"]
+        a["bodyweight"] = rnd(a["bodyweight"])
+        a["goal_weight"] = rnd(a["goal_weight"])
+        for p in self.data["prescriptions"].values():
+            if p.get("weight"):
+                p["weight"] = rnd(p["weight"])
+        for s in self.data["history"]:
+            for e in s.get("entries", []):
+                for st in e.get("sets", []):
+                    st["weight"] = rnd(st.get("weight", 0))
+        for bw in self.data["bodyweight_log"]:
+            bw["weight"] = rnd(bw["weight"])
+        rec = self.data["records"]
+        rec["lifetime"] = rnd(rec["lifetime"])
+        rec["best_week"] = rnd(rec["best_week"])
+        rec["cur_week"] = rnd(rec["cur_week"])
+        for r in rec["ex"].values():
+            r["e1rm"] = rnd(r["e1rm"])
+            r["reps_weight"] = rnd(r["reps_weight"])
+            r["tonnage"] = rnd(r["tonnage"])
+        self.data["settings"]["units"] = new_units
+        self.save()

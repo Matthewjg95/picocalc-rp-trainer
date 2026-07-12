@@ -1,0 +1,9 @@
+# Normalize line endings: store text as LF in the repo, check out native.
+* text=auto eol=lf
+
+# Explicitly binary (in case any get added later)
+*.bin binary
+*.uf2 binary
+*.mpy binary
+*.png binary
+*.bmp binary

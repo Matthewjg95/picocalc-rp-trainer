@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Generated build output (regenerate with: python tools/build_sd.py)
+/build/
+
+# Stable snapshots are captured as git tags instead of committed folders
+/releases/
+
+# Local runtime data (desktop launcher); device data lives on the SD card
+/data/
+*.tmp
+
+# Editor / OS cruft
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
