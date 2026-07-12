@@ -36,23 +36,38 @@ Linux, macOS, and over SSH/serial.
 
 The same codebase runs under MicroPython on the stock Pico core, using the
 PicoCalc MicroPython firmware's built-in 53x40 VT100 terminal for display
-and its I2C keyboard driver for input. Build the SD payload and follow the
-on-card instructions:
+and its I2C keyboard driver for input. Build the SD payload and copy it to
+the card:
 
 ```
 python tools/build_sd.py        # produces build/sd/ (py + precompiled mpy)
-# copy build/sd/* to the SD card root, then read README_PICOCALC.txt
+# copy build/sd/* to the SD card root (see pico_sd/README_PICOCALC.txt)
+# optionally copy build/sd/RP_Training_System.bin into the card's
+# /firmware folder to get a named entry in the bootloader menu
 ```
 
-One-time, on the device: boot menu → `MicroPython_*.bin` → at the on-screen
-`>>>` prompt type `
-import sys; sys.path.insert(0,'/sd'); import boot_rpts
-`.
-After that the app auto-starts on every boot. The stock BASIC/NES/etc.
-firmwares remain available in the boot menu. Since the Pico has no battery
-clock, each boot shows a two-keypress date-confirm screen seeded from the
-last saved timestamp. `tools/check_upy.py` statically verifies the shared
-modules stay MicroPython-clean.
+To launch, each boot: pick **RP_Training_System** (or `MicroPython`) in the
+bootloader menu, then at the `>>>` prompt type:
+
+```
+import rpts_boot
+```
+
+That one line is the daily launch (the firmware already has `/sd` on its
+import path). It reads only from the SD card, so it's safe and fast. The
+stock BASIC/NES/etc. firmwares stay available in the same boot menu.
+
+**Why not auto-start?** This firmware bakes its own `boot.py`/`main.py`
+into the image, so a filesystem `/main.py` is ignored — filesystem
+auto-start isn't possible without rebuilding the firmware. (Do **not** run
+an internal-flash installer: writing internal flash hangs the terminal on
+this firmware. The SD-card launch above avoids that entirely.)
+
+Since the Pico has no battery-backed clock across a reset, each boot shows
+a quick date-confirm screen seeded from the last saved timestamp; within a
+single power session the RP2040 clock keeps correct time, so relaunching
+without a full reboot needs no re-confirm. `tools/check_upy.py` statically
+verifies the shared modules stay MicroPython-clean.
 
 Environment (desktop):
 

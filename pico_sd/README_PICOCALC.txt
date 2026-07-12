@@ -6,42 +6,38 @@ no computer needed after this one-time setup.
 
 WHAT'S HERE
   rpts_boot.py         app launcher (runs from the SD card)
-  install_rpts.py      one-time autostart installer
   py/rpts/             app source code
   mpy/rpts/            precompiled version (used automatically if the
                        firmware accepts it; otherwise py/ is used)
   rpts_data/           your training database (created on first run)
+  rpts_diag.py         on-device diagnostic (only if something looks wrong)
 
-ONE-TIME SETUP (about 2 minutes, all on the PicoCalc)
+HOW TO LAUNCH (each boot)
   1. Put this SD card in the PicoCalc and power it on.
   2. In the boot menu, select:  RP_Training_System
-     (it is now listed alongside MicroPython, NES, etc.)
-  3. The first time only, you land at a MicroPython >>> prompt.
-     Type exactly, then press Enter:
+     (listed alongside MicroPython, NES, etc.)
+  3. At the MicroPython >>> prompt, type exactly and press Enter:
 
-     import sys; sys.path.insert(0,'/sd'); import install_rpts
+     import rpts_boot
 
-  4. It sets up autostart and prints a reboot command. Type it:
+  4. The app opens. Confirm the date when asked. Train.
 
-     import machine; machine.reset()
+  That one line is all you type. It loads only from the SD card (safe and
+  fast). Your BASIC, NES, MicroPython, etc. stay selectable in the same
+  boot menu whenever you like.
 
-  5. The PicoCalc reboots. Pick RP_Training_System again — the app now
-     launches straight in. Confirm the date/time when asked. Train.
-
-EVERY BOOT AFTER THAT
-  Power on -> pick RP_Training_System in the boot menu -> app launches
-  directly, no typing. Your BASIC, NES, MicroPython, etc. are untouched
-  and still selectable in the same menu whenever you like.
-
-WHY THE ONE-TIME PROMPT?
-  The boot menu runs a firmware image; autostart lives in the firmware's
-  internal storage, which only the device itself can write. Step 3 does
-  that once. After that it is fully automatic.
+WHY NOT FULLY AUTOMATIC?
+  This firmware bakes its own startup files into the image, so it ignores
+  a filesystem auto-start file. Launching by typing one line is the
+  reliable way. (Do NOT try an internal-flash installer: writing internal
+  flash hangs this firmware. The SD-card launch above avoids that.)
 
 DAILY USE
-  There is no battery clock: each boot shows a date confirm screen,
-  pre-filled from the last time you used the app (usually just press
-  Enter on SAVE, or fix the day first).
+  There is no battery clock across a reset: each boot shows a date confirm
+  screen, pre-filled from the last time you used the app (usually just
+  arrow to fix the day, then Enter on SAVE). Within one power session the
+  clock keeps correct time, so if you quit (Q) and relaunch with
+  "import rpts_boot" WITHOUT a full reboot, the date is still right.
   Quit to the MicroPython prompt anytime with Q from the home screen.
 
 DATA SAFETY
@@ -49,10 +45,6 @@ DATA SAFETY
   off mid-workout is fine — the session resumes on next boot.
   To back up your training history: put this card in a computer and
   copy the rpts_data folder somewhere safe.
-
-TURN OFF AUTOSTART
-  Quit the app (Q), then at the >>> prompt:
-      import os; os.remove('/main.py')
 
 TROUBLESHOOTING
   App didn't start / dropped to >>>  -> is the SD card seated? Type
