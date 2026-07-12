@@ -1,0 +1,33 @@
+name: CI
+
+# Run the checks on every push and pull request to main, so a red X warns
+# you about a regression before it ever reaches the PicoCalc.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: MicroPython-compat check (shared modules stay device-safe)
+        run: python tools/check_upy.py
+
+      - name: Smoke tests (engine math + scripted full-UI runs)
+        run: python tests/smoke.py
+        env:
+          PYTHONIOENCODING: utf-8
+
+      - name: Build SD payload (verifies every module compiles with mpy-cross)
+        run: |
+          pip install mpy-cross
+          python tools/build_sd.py

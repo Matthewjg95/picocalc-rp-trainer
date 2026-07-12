@@ -1,5 +1,8 @@
 # RP TRAINING SYSTEM
 
+[![CI](https://github.com/Matthewjg95/picocalc-rp-trainer/actions/workflows/ci.yml/badge.svg)](https://github.com/Matthewjg95/picocalc-rp-trainer/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 An offline, keyboard-first strength-training operating system with a
 Renaissance Periodization (RP) auto-regulation coach, styled like a piece of
 lab equipment. Pure Python 3 standard library — no dependencies, no network.
