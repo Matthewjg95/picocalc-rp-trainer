@@ -202,6 +202,60 @@ def run_ui(db, keys, w=64, h=32):
     return term.frames
 
 
+def test_profiles(tmp):
+    print("[profiles]")
+    d = os.path.join(tmp, "prof")
+    db = DB(d).load()
+    check(db.active == "Athlete", "default profile is Athlete")
+    check(db.list_profiles() == ["Athlete"], "lists the default profile")
+    db.data["athlete"]["name"] = "Real"
+    db.data["bodyweight_log"].append({"date": "2026-01-01", "weight": 200})
+    db.data["settings"]["theme"] = "amber"
+    db.save()
+
+    db.create_profile("Demo")
+    check(db.active == "Demo", "switched to the new Demo profile")
+    check(db.data["settings"]["theme"] == "amber",
+          "new profile inherits settings (theme)")
+    check(db.data["athlete"]["name"] == "Athlete",
+          "new profile has a fresh athlete")
+    check(len(db.data["bodyweight_log"]) == 0, "new profile has no history")
+    check(db.list_profiles() == ["Athlete", "Demo"], "both profiles listed")
+    db.data["athlete"]["name"] = "Demo Person"
+    db.save()
+
+    db.switch_profile("Athlete")
+    check(db.data["athlete"]["name"] == "Real", "Athlete data preserved")
+    check(db.data["bodyweight_log"][0]["weight"] == 200,
+          "Athlete history preserved after round-trip")
+
+    db2 = DB(d).load()
+    check(db2.active == "Athlete", "active profile persists across reload")
+    check(db2.data["athlete"]["name"] == "Real", "reload restores active data")
+
+    check(db.delete_profile("Demo") is True, "deleted Demo profile")
+    check("Demo" not in db.list_profiles(), "Demo gone from the list")
+    check(db.delete_profile("Athlete") is False,
+          "cannot delete the active profile")
+
+    # legacy migration: a flat root file becomes the Athlete profile, even
+    # with another profile already present on the card
+    import json as _json
+    md = os.path.join(tmp, "migrate")
+    os.makedirs(os.path.join(md, "profiles", "Demo"))
+    with open(os.path.join(md, "profiles", "Demo", "rpts_data.json"),
+              "w") as f:
+        _json.dump({"athlete": {"name": "Demo"}}, f)
+    with open(os.path.join(md, "rpts_data.json"), "w") as f:
+        _json.dump({"athlete": {"name": "Legacy Me"}, "history": []}, f)
+    mdb = DB(md).load()
+    check(mdb.active == "Athlete", "post-migration active is Athlete")
+    check(mdb.data["athlete"]["name"] == "Legacy Me",
+          "legacy root data migrated into the Athlete profile")
+    check("Demo" in mdb.list_profiles(),
+          "pre-existing Demo profile survived migration")
+
+
 def test_ui_navigation(tmp):
     print("[ui navigation]")
     db = seeded_db(os.path.join(tmp, "nav"))
@@ -219,8 +273,20 @@ def test_ui_navigation(tmp):
     check("MESOCYCLE" in text, "meso screen visited")
     check("GOALS" in text, "goals screen visited")
     check("PROGRAM" in text, "program editor visited")
-    check("ATHLETE PROFILE" in text, "profile visited")
+    check("ATHLETES" in text, "athletes manager visited")
     check("SETTINGS" in text, "settings visited")
+
+    # [A]thletes -> [E]dit opens the profile form
+    frames = run_ui(db, ["a", "e", "ESC", "ESC", "q"])
+    check("ATHLETE PROFILE" in "\n".join(frames),
+          "edit-current opens the profile form")
+
+    # create a new athlete through the UI: a -> n -> type name -> Enter
+    db_c = seeded_db(os.path.join(tmp, "nav2"))
+    run_ui(db_c, ["a", "n"] + list("Beta") + ["ENTER", "q"])
+    check(db_c.active == "Beta", "UI created and switched to new athlete")
+    check("Athlete" in db_c.list_profiles(),
+          "original athlete still exists after UI create")
 
     # graceful degradation: ascii + mono at PicoCalc-ish size
     db.data["settings"]["theme"] = "mono"
@@ -530,11 +596,37 @@ def test_full_meso(tmp):
           "cache rebuild from archive+live matches")
 
 
+def test_demo_gen(tmp):
+    print("[demo generator]")
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, os.path.join(root, "tools"))
+    import gen_demo
+    db = gen_demo.generate(os.path.join(tmp, "demo"), months=3, seed=1)
+    check(db.active == "Demo", "generator leaves the Demo profile active")
+    check(db.data["program"]["name"] == "Push Pull Legs", "demo uses PPL")
+    total = sum(1 for _ in db.iter_all_sessions())
+    check(total > 40, "demo has many sessions (%d)" % total)
+    check(len(db.data["history"]) == 24, "demo live window matches device")
+    check(db.data["records"]["lifetime"] > 300000,
+          "demo has a large lifetime tonnage")
+    check(db.data["meso"]["number"] >= 2, "demo spans multiple mesocycles")
+    check(len(db.data["bodyweight_log"]) > 20, "demo has a bodyweight log")
+    check(len(db.data["swaps"]) >= 1, "demo logged an exercise swap")
+    recs = analytics.all_records(db)
+    dl = dict(recs).get("Deadlift", {}).get("e1rm", 0)
+    rdl = dict(recs).get("Romanian Deadlift", {}).get("e1rm", 0)
+    check(dl > rdl > 0, "demo loads are sane (deadlift e1RM > RDL)")
+    db2 = DB(os.path.join(tmp, "demo")).load()
+    check(db2.active == "Demo" and db2.data["history"],
+          "demo profile reloads from disk")
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="rpts_test_")
     try:
         test_compat()
         test_engine(os.path.join(tmp, "eng"))
+        test_profiles(tmp)
         test_ui_navigation(tmp)
         test_ui_workout_flow(tmp)
         test_workout_add_skip(tmp)
@@ -542,6 +634,7 @@ def main():
         test_bytecanvas()
         test_picoterm()
         test_full_meso(tmp)
+        test_demo_gen(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print("\nALL %d CHECKS PASSED" % PASS)

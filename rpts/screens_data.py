@@ -319,6 +319,78 @@ class MesoScreen(Screen):
 
 # -- athlete profile -------------------------------------------------------
 
+# -- athletes (profile switcher) -----------------------------------------
+
+class AthletesScreen(Screen):
+    title = "ATHLETES"
+    hints = "[Up/Dn] [Ent]Switch/Edit [N]ew [E]dit [D]el [ESC]"
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.names = app.db.list_profiles()
+        self.sel = self.names.index(app.db.active) \
+            if app.db.active in self.names else 0
+
+    def _refresh(self):
+        self.names = self.app.db.list_profiles()
+        self.sel = self.names.index(self.app.db.active) \
+            if self.app.db.active in self.names else 0
+
+    def render(self, cv):
+        st, db = self.app.style, self.app.db
+        cv.put(3, 2, "Each athlete keeps its own program, history,", "dim")
+        cv.put(3, 3, "records and settings.", "dim")
+        y = 5
+        for i, n in enumerate(self.names):
+            sel = i == self.sel
+            active = n == db.active
+            cv.put(3, y, (st.bullet + " " if sel else "  ") +
+                   widgets.clip(n, cv.w - 18) + ("  (current)" if active
+                                                 else ""),
+                   "inv" if sel else ("good" if active else ""))
+            y += 1
+        y += 1
+        cv.put(3, y, "Enter = switch to it (or edit, if it's current)",
+               "dim")
+        cv.put(3, y + 1, "N = new athlete   E = edit current   D = delete",
+               "dim")
+
+    def on_key(self, k):
+        app, db = self.app, self.app.db
+        kl = (k or "").lower()
+        n = len(self.names)
+        if k == "DOWN":
+            self.sel = (self.sel + 1) % n
+        elif k == "UP":
+            self.sel = (self.sel - 1) % n
+        elif k == "ENTER":
+            name = self.names[self.sel]
+            if name == db.active:
+                app.push(ProfileScreen(app))
+            else:
+                db.switch_profile(name)
+                app.pop_to_root()          # reflect the new athlete at home
+        elif kl == "e":
+            app.push(ProfileScreen(app))
+        elif kl == "n":
+            nm = app.prompt("New athlete name")
+            nm = (nm or "").strip()
+            if nm and nm not in self.names and "/" not in nm:
+                db.create_profile(nm)
+                app.pop_to_root()
+        elif kl == "d":
+            name = self.names[self.sel]
+            if name == db.active:
+                app.push(InfoScreen(app, "DELETE", [
+                    ("Can't delete the athlete you're using.", "warn"),
+                    ("Switch to another one first.", "dim")]))
+            elif app.confirm("Delete '%s' and ALL its data?" % name):
+                db.delete_profile(name)
+                self._refresh()
+        elif k == "ESC":
+            app.pop()
+
+
 class ProfileScreen(FormScreen):
     def __init__(self, app):
         a = app.db.data["athlete"]

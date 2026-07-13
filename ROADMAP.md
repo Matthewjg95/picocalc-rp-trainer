@@ -4,6 +4,13 @@ Running list of what's done and what's planned, so nothing gets lost.
 Newest changes at the top of "Done".
 
 ## Done (on the SD card)
+- **Multiple athlete profiles** — `[A]` is now an athlete manager
+  (switch / new / edit / delete); each athlete keeps its own program,
+  history, records and settings. Old single-athlete data auto-migrates.
+- **Demo athlete** with ~8 months of realistic generated training
+  (`tools/gen_demo.py`) — multiple mesocycles, load progression, a
+  pain-driven squat->hack-squat swap, bodyweight trend, ~5M lb lifetime
+  tonnage — for exploring long-term coaching/charts. Switch to it via `[A]`.
 - Home calendar fixed (day letters were being overwritten by the markers)
 - Workout "UP NEXT" now lists **all** remaining exercises with a count,
   not just 3

@@ -118,7 +118,7 @@ class HomeScreen(Screen):
     _DASH = {"r": "RecoveryScreen", "t": "TrendsScreen",
              "c": "CalendarScreen", "k": "RecordsScreen",
              "m": "MesoScreen", "g": "GoalsScreen",
-             "o": "ProgramScreen", "a": "ProfileScreen",
+             "o": "ProgramScreen", "a": "AthletesScreen",
              "x": "SettingsScreen"}
 
     def _open(self, cls_name):

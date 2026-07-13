@@ -58,16 +58,117 @@ def empty_records():
 
 
 class DB:
+    """Persistence with multiple named athlete profiles. Each profile is a
+    self-contained folder under <data_dir>/profiles/<name>/ (same files as a
+    single-athlete DB); <data_dir>/active.txt names the current one. `data`
+    always holds the flat document for the active profile, so the rest of
+    the app is unaware profiles exist."""
+
     def __init__(self, data_dir, archive_keep=200):
-        self.dir = data_dir
+        self.root = data_dir
         self.archive_keep = archive_keep
-        self.path = pjoin(data_dir, "rpts_data.json")
-        self.archive_path = pjoin(data_dir, "history_archive.jsonl")
-        self.backup_dir = pjoin(data_dir, "backups")
+        self.active = self._read_active()
+        self._set_paths()
         self.data = default_data()
+
+    # -- profile plumbing -------------------------------------------------
+    def _profiles_root(self):
+        return pjoin(self.root, "profiles")
+
+    def _set_paths(self):
+        self.dir = pjoin(self._profiles_root(), self.active)
+        self.path = pjoin(self.dir, "rpts_data.json")
+        self.archive_path = pjoin(self.dir, "history_archive.jsonl")
+        self.backup_dir = pjoin(self.dir, "backups")
+
+    def _read_active(self):
+        p = pjoin(self.root, "active.txt")
+        if exists(p):
+            try:
+                with open(p, "r") as f:
+                    name = f.read().strip()
+                if name:
+                    return name
+            except OSError:
+                pass
+        return "Athlete"
+
+    def _write_active(self, name):
+        makedirs(self.root)
+        with open(pjoin(self.root, "active.txt"), "w") as f:
+            f.write(name)
+
+    def _migrate_legacy(self):
+        """v1/v2 kept a single athlete flat at the data-dir root. Move it
+        into profiles/Athlete/ once. Keyed on the Athlete profile not yet
+        existing (not on the profiles/ folder), so a pre-placed Demo
+        profile doesn't stop the real data from migrating."""
+        legacy = pjoin(self.root, "rpts_data.json")
+        if not exists(legacy):
+            return
+        dst = pjoin(self._profiles_root(), "Athlete")
+        if exists(pjoin(dst, "rpts_data.json")):
+            return  # already migrated
+        makedirs(dst)
+        try:
+            compat.copyfile(legacy, pjoin(dst, "rpts_data.json"))
+            la = pjoin(self.root, "history_archive.jsonl")
+            if exists(la):
+                compat.copyfile(la, pjoin(dst, "history_archive.jsonl"))
+        except OSError:
+            pass
+
+    def list_profiles(self):
+        names = listdir_sorted(self._profiles_root())
+        if self.active not in names:
+            names = sorted(names + [self.active])
+        return names or [self.active]
+
+    def switch_profile(self, name):
+        if name == self.active:
+            return
+        self.save()
+        self.active = name
+        self._write_active(name)
+        self._set_paths()
+        self.data = default_data()
+        self.load()
+
+    def create_profile(self, name, inherit_settings=True):
+        settings = compat.clone(self.data["settings"]) \
+            if inherit_settings else None
+        self.save()                       # persist the profile we're leaving
+        self.active = name
+        self._write_active(name)
+        self._set_paths()
+        self.data = default_data()
+        if settings:                      # carry theme/units/pico-tuning over
+            self.data["settings"] = settings
+        makedirs(self.dir)
+        self.save()
+
+    def delete_profile(self, name):
+        if name == self.active:
+            return False                  # can't delete the active profile
+        d = pjoin(self._profiles_root(), name)
+        bk = pjoin(d, "backups")
+        for f in listdir_sorted(bk):
+            compat.remove_quiet(pjoin(bk, f))
+        try:
+            os.rmdir(bk)
+        except OSError:
+            pass
+        for f in listdir_sorted(d):
+            compat.remove_quiet(pjoin(d, f))
+        try:
+            os.rmdir(d)
+        except OSError:
+            pass
+        return True
 
     # -- load / save ------------------------------------------------------
     def load(self):
+        self._migrate_legacy()
         if exists(self.path):
             with open(self.path, "r") as f:
                 loaded = json.load(f)
