@@ -109,10 +109,12 @@ def run():
         pass
     restore_clock(CLOCK_FILE)
     # the live window holds compact session SUMMARIES; full set-by-set
-    # records stream from the JSONL archive on the card. 24 summaries
-    # parse to ~25 KB of objects — measured to leave ~50 KB free for the
-    # UI on the RP2040 (48 left only ~10 KB and crashed on first keypress)
-    db = DB(DATA_DIR, archive_keep=24).load()
+    # records stream from the JSONL archive on the card. Measured on
+    # device: 24 summaries parse to ~52 KB of objects, leaving ~20 KB
+    # after the first frame — opening a dashboard (lazy ~20 KB module
+    # import) then OOMed. 14 summaries (~30 KB parsed) leaves the UI
+    # real headroom, and still covers 2+ program cycles for the coach.
+    db = DB(DATA_DIR, archive_keep=14).load()
     _blog("phase: db loaded")
     s = db.data["settings"]
     if not s.get("pico_tuned"):

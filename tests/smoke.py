@@ -645,7 +645,7 @@ def test_demo_gen(tmp):
     check(db.data["program"]["name"] == "Push Pull Legs", "demo uses PPL")
     total = sum(1 for _ in db.iter_all_sessions())
     check(total > 40, "demo has many sessions (%d)" % total)
-    check(len(db.data["history"]) == 24, "demo live window matches device")
+    check(len(db.data["history"]) == 14, "demo live window matches device")
     check(all(s.get("summary") for s in db.data["history"]),
           "demo live window is summaries only")
     ck = db.data["history"][-1]["checkin"]

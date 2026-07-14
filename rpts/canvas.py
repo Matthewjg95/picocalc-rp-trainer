@@ -113,19 +113,23 @@ class ByteCanvas:
 
     def clear(self, ch=" ", attr=""):
         if ch == " " and ATTR_INDEX.get(attr, 0) == 0:
-            # fresh copies of the blank templates. bytearray(bytes) is one
-            # cheap allocation and works everywhere; full-slice assignment
-            # (ba[:] = ...) is avoided because MicroPython's support for it
-            # is unreliable across versions.
+            # in-place, allocation-free reset via memoryview chunk copies —
+            # under heap pressure/fragmentation even a 2 KB alloc can fail
+            # (it crashed the device), so clear() must not allocate at all
             try:
-                self.chars = bytearray(self._blank)
-                self.attrs = bytearray(self._zero)
-            except MemoryError:
-                # heap pressure: reclaim garbage and retry once before
-                # giving up (this alloc crashed the date screen when a
-                # heavy profile left only ~2 KB free)
-                import gc
-                gc.collect()
+                dst_c = memoryview(self.chars)
+                dst_a = memoryview(self.attrs)
+                src_c = memoryview(self._blank)
+                src_a = memoryview(self._zero)
+                n = len(self.chars)
+                i = 0
+                while i < n:
+                    j = min(i + 256, n)
+                    dst_c[i:j] = src_c[i:j]
+                    dst_a[i:j] = src_a[i:j]
+                    i = j
+            except (TypeError, NotImplementedError):
+                # runtime without memoryview slice assignment: reallocate
                 self.chars = bytearray(self._blank)
                 self.attrs = bytearray(self._zero)
             return
