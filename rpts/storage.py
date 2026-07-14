@@ -175,6 +175,7 @@ class DB:
             base = default_data()
             base.update(loaded)  # forward-compatible: new keys get defaults
             self.data = base
+            self.migrate_history_to_summaries()  # pre-summary profiles
             if not self.data.get("records", {}).get("n_sessions") and \
                     self.data["history"]:
                 self.rebuild_records()
@@ -251,34 +252,71 @@ class DB:
         rec["n_sessions"] += 1
 
     def rebuild_records(self):
-        """Replay archive (streamed) + live history into a fresh cache."""
+        """Replay all full sessions (archive streamed + any non-summary
+        live sessions) into a fresh cache. Summary sessions are skipped —
+        their full twins are in the archive."""
         self.data["records"] = empty_records()
-        if exists(self.archive_path):
-            with open(self.archive_path, "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if line:
-                        self.update_records(json.loads(line))
-        for s in self.data["history"]:
+        for s in self.iter_all_sessions():
             self.update_records(s)
 
     # -- history archive ------------------------------------------------------
+    def commit_session(self, session):
+        """Persist a finished session: the FULL set-by-set record goes to
+        the on-disk archive immediately; the live window keeps only a
+        compact summary. A full session is ~4 KB of parsed objects — 24 of
+        them OOMed the RP2040 on profile load; summaries are ~25x smaller,
+        so the device can hold a longer trend window in less RAM."""
+        from . import analytics
+        makedirs(self.dir)
+        with open(self.archive_path, "a") as f:
+            f.write(json.dumps(session))
+            f.write("\n")
+        self.data["history"].append(analytics.summarize_session(session))
+        self.archive_old()
+
     def archive_old(self):
-        """Move the oldest live sessions to the on-disk archive so RAM
-        stays bounded. Also trims the bodyweight log."""
+        """Trim the live window and the bodyweight log. Summaries being
+        dropped are already in the archive; any legacy FULL session being
+        dropped is archived first so no data is ever lost."""
         hist = self.data["history"]
         if len(hist) > self.archive_keep:
-            makedirs(self.dir)
-            with open(self.archive_path, "a") as f:
-                while len(hist) > self.archive_keep:
-                    f.write(json.dumps(hist.pop(0)))
-                    f.write("\n")
+            full_drops = [s for s in hist[: len(hist) - self.archive_keep]
+                          if not s.get("summary")]
+            if full_drops:
+                makedirs(self.dir)
+                with open(self.archive_path, "a") as f:
+                    for s in full_drops:
+                        f.write(json.dumps(s))
+                        f.write("\n")
+            del hist[: len(hist) - self.archive_keep]
         bw = self.data["bodyweight_log"]
         if len(bw) > 400:
             del bw[: len(bw) - 400]
 
+    def migrate_history_to_summaries(self):
+        """One-time upgrade of a pre-summary profile: archive every full
+        live session and replace it with its summary. Returns count."""
+        from . import analytics
+        hist = self.data["history"]
+        full = [s for s in hist if not s.get("summary")]
+        if not full:
+            return 0
+        makedirs(self.dir)
+        with open(self.archive_path, "a") as f:
+            for s in full:
+                f.write(json.dumps(s))
+                f.write("\n")
+        for i in range(len(hist)):
+            if not hist[i].get("summary"):
+                hist[i] = analytics.summarize_session(hist[i])
+        self.save()
+        return len(full)
+
     def iter_all_sessions(self):
-        """Every session ever, oldest first, archive streamed from disk."""
+        """Every FULL session ever, oldest first, archive streamed from
+        disk. Live summaries are skipped (their full versions are in the
+        archive); legacy full sessions still in the live window are
+        included."""
         if exists(self.archive_path):
             with open(self.archive_path, "r") as f:
                 for line in f:
@@ -286,7 +324,8 @@ class DB:
                     if line:
                         yield json.loads(line)
         for s in self.data["history"]:
-            yield s
+            if not s.get("summary"):
+                yield s
 
     # -- CSV --------------------------------------------------------------
     CSV_FIELDS = ["date", "week", "day", "exercise", "set", "weight",
@@ -368,6 +407,8 @@ class DB:
                 self.update_records(s)
                 added += 1
         self.data["history"].sort(key=lambda s: s["date"])
+        # archives the imported full sessions and keeps summaries live
+        self.migrate_history_to_summaries()
         self.archive_old()
         self.save()
         return added

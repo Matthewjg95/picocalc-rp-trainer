@@ -4,6 +4,11 @@ Running list of what's done and what's planned, so nothing gets lost.
 Newest changes at the top of "Done".
 
 ## Done (on the SD card)
+- **Summary-based live history** — fixed the MemoryError when switching to
+  a data-heavy athlete: the live window now holds compact per-session
+  summaries (~25x smaller); full set-by-set records stream from the
+  on-disk archive. Window grew 24 -> 48 sessions (richer trends) while the
+  loaded document shrank 170 KB -> 33 KB. Old profiles migrate on load.
 - **Multiple athlete profiles** — `[A]` is now an athlete manager
   (switch / new / edit / delete); each athlete keeps its own program,
   history, records and settings. Old single-athlete data auto-migrates.
