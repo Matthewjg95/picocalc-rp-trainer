@@ -101,10 +101,18 @@ def summarize_session(session):
             _compact(st["tonnage"], 0), _compact(st["avg_rir"], 2),
             _compact(st["max_pain"], 0), _compact(st["target_rir"]),
         ])
+    # keep only the check-in fields analytics reads (recovery model +
+    # trend charts); calories/protein aren't graphed and bodyweight is
+    # already in the bodyweight log
+    ck = session.get("checkin", {})
+    ck_slim = {}
+    for k in ("sleep", "stress", "energy", "motivation", "joint_pain"):
+        if k in ck:
+            ck_slim[k] = ck[k]
     out = {
         "date": session["date"], "week": session.get("week", 0),
         "meso": session.get("meso", 0), "day": session.get("day", ""),
-        "checkin": session.get("checkin", {}),
+        "checkin": ck_slim,
         "entries": entries, "completed": True, "summary": True,
     }
     if session.get("imported"):

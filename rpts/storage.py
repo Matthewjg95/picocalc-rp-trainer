@@ -170,6 +170,11 @@ class DB:
     def load(self):
         self._migrate_legacy()
         if exists(self.path):
+            try:  # a defragmented heap matters for the parse (RP2040)
+                import gc
+                gc.collect()
+            except ImportError:
+                pass
             with open(self.path, "r") as f:
                 loaded = json.load(f)
             base = default_data()

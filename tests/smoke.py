@@ -645,9 +645,12 @@ def test_demo_gen(tmp):
     check(db.data["program"]["name"] == "Push Pull Legs", "demo uses PPL")
     total = sum(1 for _ in db.iter_all_sessions())
     check(total > 40, "demo has many sessions (%d)" % total)
-    check(len(db.data["history"]) == 48, "demo live window matches device")
+    check(len(db.data["history"]) == 24, "demo live window matches device")
     check(all(s.get("summary") for s in db.data["history"]),
           "demo live window is summaries only")
+    ck = db.data["history"][-1]["checkin"]
+    check("calories" not in ck and "sleep" in ck,
+          "summary check-ins slimmed to analytics fields")
     check(db.data["records"]["lifetime"] > 300000,
           "demo has a large lifetime tonnage")
     check(db.data["meso"]["number"] >= 2, "demo spans multiple mesocycles")

@@ -108,9 +108,11 @@ def run():
     except OSError:
         pass
     restore_clock(CLOCK_FILE)
-    # the live window holds compact session SUMMARIES (~150 bytes each);
-    # full set-by-set records stream from the JSONL archive on the card
-    db = DB(DATA_DIR, archive_keep=48).load()
+    # the live window holds compact session SUMMARIES; full set-by-set
+    # records stream from the JSONL archive on the card. 24 summaries
+    # parse to ~25 KB of objects — measured to leave ~50 KB free for the
+    # UI on the RP2040 (48 left only ~10 KB and crashed on first keypress)
+    db = DB(DATA_DIR, archive_keep=24).load()
     _blog("phase: db loaded")
     s = db.data["settings"]
     if not s.get("pico_tuned"):

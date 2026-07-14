@@ -28,7 +28,7 @@ from rpts.storage import DB  # noqa: E402
 # device keeps only this many session SUMMARIES live; generate to match so
 # the Demo looks the same on the PicoCalc (full sessions stream from the
 # archive, lifetime records/tonnage come from the cache)
-ARCHIVE_KEEP = 48
+ARCHIVE_KEEP = 24
 TRAIN_WEEKDAYS = (0, 1, 3, 4, 6)  # Mon Tue Thu Fri Sun (~5/week)
 
 # realistic intermediate starting loads (lb) so progression begins from

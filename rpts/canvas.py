@@ -117,8 +117,17 @@ class ByteCanvas:
             # cheap allocation and works everywhere; full-slice assignment
             # (ba[:] = ...) is avoided because MicroPython's support for it
             # is unreliable across versions.
-            self.chars = bytearray(self._blank)
-            self.attrs = bytearray(self._zero)
+            try:
+                self.chars = bytearray(self._blank)
+                self.attrs = bytearray(self._zero)
+            except MemoryError:
+                # heap pressure: reclaim garbage and retry once before
+                # giving up (this alloc crashed the date screen when a
+                # heavy profile left only ~2 KB free)
+                import gc
+                gc.collect()
+                self.chars = bytearray(self._blank)
+                self.attrs = bytearray(self._zero)
             return
         c = ord(ch)
         if c > 127:
