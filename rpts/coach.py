@@ -81,11 +81,12 @@ def recovery_scores(db):
     vol_load = clamp(max(ratios) * 0.5 + (sum(ratios) / len(ratios)) * 0.5) \
         if ratios else 0.0
 
-    # accumulated set pain over the last week
+    # accumulated exercise pain over the last week (per-entry max pain —
+    # works for both full and summarized history entries)
     cutoff = date_add(today(), -7)
-    pains = [st.get("pain", 0)
+    pains = [analytics.entry_stats(e)["max_pain"]
              for s in db.data["history"] if s["date"] >= cutoff
-             for e in s.get("entries", []) for st in e.get("sets", [])]
+             for e in s.get("entries", [])]
     set_pain = clamp((sum(pains) / len(pains)) / 10.0) if pains else 0.0
 
     week_pos = clamp((meso["week"] - 1) / max(1, meso["weeks"] - 1))

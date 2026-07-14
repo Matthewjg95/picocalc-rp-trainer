@@ -108,9 +108,9 @@ def run():
     except OSError:
         pass
     restore_clock(CLOCK_FILE)
-    # keep only a recent window of sessions in RAM; the rest streams
-    # from the JSONL archive on the card
-    db = DB(DATA_DIR, archive_keep=24).load()
+    # the live window holds compact session SUMMARIES (~150 bytes each);
+    # full set-by-set records stream from the JSONL archive on the card
+    db = DB(DATA_DIR, archive_keep=48).load()
     _blog("phase: db loaded")
     s = db.data["settings"]
     if not s.get("pico_tuned"):

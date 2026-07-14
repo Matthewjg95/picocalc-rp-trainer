@@ -98,8 +98,9 @@ class TrendsScreen(Screen):
         counts = {}
         for s in db.data["history"]:
             for e in s.get("entries", []):
-                if e.get("sets"):
-                    counts[e["exercise"]] = counts.get(e["exercise"], 0) + 1
+                if analytics.entry_nsets(e):
+                    nm = analytics.entry_exercise(e)
+                    counts[nm] = counts.get(nm, 0) + 1
         for name, _ in sorted(counts.items(), key=lambda kv: -kv[1])[:5]:
             hist = analytics.exercise_sessions(db, name)
             rows.append(("e1RM " + name[:14],
@@ -368,7 +369,20 @@ class AthletesScreen(Screen):
             if name == db.active:
                 app.push(ProfileScreen(app))
             else:
-                db.switch_profile(name)
+                try:
+                    db.switch_profile(name)
+                except MemoryError:
+                    # profile too large for the current heap: fall back to
+                    # the previous athlete and tell the user what to do
+                    db.switch_profile(db.active)
+                    app.push(InfoScreen(app, "OUT OF MEMORY", [
+                        ("Not enough free RAM to load '%s'." % name,
+                         "bad"),
+                        ("Power-cycle and switch to it first thing",
+                         "dim"),
+                        ("after boot (before opening dashboards).",
+                         "dim")]))
+                    return
                 app.pop_to_root()          # reflect the new athlete at home
         elif kl == "e":
             app.push(ProfileScreen(app))

@@ -25,10 +25,10 @@ sys.path.insert(0, ROOT)
 from rpts import analytics, coach, compat, programs  # noqa: E402
 from rpts.storage import DB  # noqa: E402
 
-# device keeps only this many sessions live; generate to match so the Demo
-# looks the same on the PicoCalc (older sessions stream from the archive,
-# lifetime records/tonnage come from the cache)
-ARCHIVE_KEEP = 24
+# device keeps only this many session SUMMARIES live; generate to match so
+# the Demo looks the same on the PicoCalc (full sessions stream from the
+# archive, lifetime records/tonnage come from the cache)
+ARCHIVE_KEEP = 48
 TRAIN_WEEKDAYS = (0, 1, 3, 4, 6)  # Mon Tue Thu Fri Sun (~5/week)
 
 # realistic intermediate starting loads (lb) so progression begins from
@@ -104,9 +104,8 @@ def _run_session(db, iso, rnd, squat_pain):
     # process exactly like a real finished session
     analytics.detect_prs(db, session)
     _blocks, _overall, updates = coach.analyze_session(db, session)
-    db.data["history"].append(session)
     db.update_records(session)
-    db.archive_old()
+    db.commit_session(session)  # full -> archive, summary -> live window
     coach.apply_updates(db, updates)
     coach.advance_calendar(db)
 

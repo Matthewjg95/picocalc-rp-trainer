@@ -25,9 +25,91 @@ def best_set_e1rm(entry):
     return max(vals) if vals else 0.0
 
 
+# Entries come in two shapes: FULL dicts (have "sets"; the in-progress
+# session and the on-disk archive) and SUMMARY lists (fixed field order,
+# kept in the live window — lists cost a fraction of a dict's RAM on the
+# RP2040 and skip ~90 bytes of repeated JSON keys per entry).
+#   summary: [exercise, n_sets, best_e1rm, top_weight, tonnage,
+#             avg_rir, max_pain, target_rir]
+# These accessors read either shape.
+
+def entry_exercise(entry):
+    return entry[0] if isinstance(entry, list) else entry["exercise"]
+
+
+def entry_nsets(entry):
+    if isinstance(entry, list):
+        return entry[1]
+    return len(entry.get("sets", []))
+
+
 def entry_tonnage(entry):
+    if isinstance(entry, list):
+        return entry[4]
     return sum(s.get("weight", 0) * s.get("reps", 0)
                for s in entry.get("sets", []))
+
+
+def entry_stats(entry):
+    """Per-session stats for one exercise, from a summary or a full entry."""
+    if isinstance(entry, list):                   # summary entry
+        return {
+            "n_sets": entry[1], "best_e1rm": entry[2],
+            "top_weight": entry[3], "tonnage": entry[4],
+            "avg_rir": entry[5], "max_pain": entry[6],
+            "target_rir": entry[7], "total_reps": 0,
+        }
+    sets = entry.get("sets", [])                  # full entry
+    reps_done = [x["reps"] for x in sets if x.get("reps", 0) > 0]
+    rirs = [x.get("rir", 0) for x in sets]
+    return {
+        "target_rir": entry.get("target_rir", 2),
+        "best_e1rm": best_set_e1rm(entry),
+        "top_weight": gmax((x.get("weight", 0) for x in sets)),
+        "total_reps": sum(reps_done),
+        "tonnage": entry_tonnage(entry),
+        "avg_rir": sum(rirs) / len(rirs) if rirs else 0,
+        "max_pain": gmax((x.get("pain", 0) for x in sets)),
+        "n_sets": len(sets),
+    }
+
+
+def _compact(v, nd=1):
+    """Round and int-ify a number so it serializes small ('1.83' not
+    '1.8333333333333333', '345' not '345.0')."""
+    v = round(v, nd)
+    iv = int(v)
+    return iv if v == iv else v
+
+
+def summarize_session(session):
+    """Compact form of a finished session for the live window: drops the
+    per-set detail (which is preserved in the on-disk archive) and keeps
+    only what the charts, trends and coach need. Numbers are rounded so
+    the JSON stays small on the device."""
+    entries = []
+    for e in session.get("entries", []):
+        if isinstance(e, list):                 # already a summary
+            entries.append(e)
+            continue
+        if not e.get("sets"):
+            continue
+        st = entry_stats(e)
+        entries.append([
+            e["exercise"], st["n_sets"],
+            _compact(st["best_e1rm"]), _compact(st["top_weight"]),
+            _compact(st["tonnage"], 0), _compact(st["avg_rir"], 2),
+            _compact(st["max_pain"], 0), _compact(st["target_rir"]),
+        ])
+    out = {
+        "date": session["date"], "week": session.get("week", 0),
+        "meso": session.get("meso", 0), "day": session.get("day", ""),
+        "checkin": session.get("checkin", {}),
+        "entries": entries, "completed": True, "summary": True,
+    }
+    if session.get("imported"):
+        out["imported"] = True  # keeps CSV re-import deduplication working
+    return out
 
 
 def session_tonnage(session):
@@ -35,7 +117,7 @@ def session_tonnage(session):
 
 
 def session_sets(session):
-    return sum(len(e.get("sets", [])) for e in session.get("entries", []))
+    return sum(entry_nsets(e) for e in session.get("entries", []))
 
 
 # -- history queries --------------------------------------------------------
@@ -45,22 +127,13 @@ def exercise_sessions(db, name):
     out = []
     for s in db.data["history"]:
         for e in s.get("entries", []):
-            if e["exercise"] != name or not e.get("sets"):
+            if entry_exercise(e) != name:
                 continue
-            sets = e["sets"]
-            reps_done = [x["reps"] for x in sets if x.get("reps", 0) > 0]
-            rirs = [x.get("rir", 0) for x in sets]
-            out.append({
-                "date": s["date"],
-                "target_rir": e.get("target_rir", 2),
-                "best_e1rm": best_set_e1rm(e),
-                "top_weight": gmax((x.get("weight", 0) for x in sets)),
-                "total_reps": sum(reps_done),
-                "tonnage": entry_tonnage(e),
-                "avg_rir": sum(rirs) / len(rirs) if rirs else 0,
-                "max_pain": gmax((x.get("pain", 0) for x in sets)),
-                "n_sets": len(sets),
-            })
+            st = entry_stats(e)
+            if st["n_sets"] == 0:
+                continue
+            st["date"] = s["date"]
+            out.append(st)
     return out
 
 
@@ -108,10 +181,10 @@ def weekly_muscle_sets(db, ref_date=None, extra_session=None):
         if week_key(s["date"]) != wk:
             continue
         for e in s.get("entries", []):
-            n = len(e.get("sets", []))
+            n = entry_nsets(e)
             if not n:
                 continue
-            inf = exercise_db.info(e["exercise"])
+            inf = exercise_db.info(entry_exercise(e))
             for m in inf["primary"]:
                 totals[m] = totals.get(m, 0) + n
             for m in inf["secondary"]:
@@ -124,8 +197,7 @@ def strength_trend(db, sessions_back=8):
     ~ +0.01 means ~1%/session improvement."""
     means = []
     for s in db.data["history"][-sessions_back:]:
-        vals = [best_set_e1rm(e) for e in s.get("entries", [])
-                if e.get("sets")]
+        vals = [entry_stats(e)["best_e1rm"] for e in s.get("entries", [])]
         vals = [v for v in vals if v > 0]
         if vals:
             means.append(sum(vals) / len(vals))

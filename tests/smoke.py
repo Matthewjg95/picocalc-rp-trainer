@@ -5,6 +5,7 @@ No real terminal is touched — a FakeTerm captures frames and feeds keys.
 """
 import copy
 import datetime as dt
+import json
 import os
 import shutil
 import sys
@@ -539,6 +540,18 @@ def test_picoterm():
 def test_full_meso(tmp):
     """Simulate a complete 6-week mesocycle end to end (engine only)."""
     print("[full mesocycle]")
+
+    def analytics_full_session(i):
+        """A minimal FULL (set-level) session for migration tests."""
+        return {
+            "date": "2026-06-%02d" % (i + 1), "week": 1, "meso": 1,
+            "day": "Legacy", "checkin": {}, "post": {}, "completed": True,
+            "entries": [{"exercise": "Bench Press", "target_sets": 2,
+                         "target_reps": [6, 10], "target_rir": 2,
+                         "sets": [{"weight": 150, "reps": 8, "rir": 2,
+                                   "pain": 0, "difficulty": 6, "notes": ""}
+                                  for _ in range(2)]}],
+        }
     db = DB(os.path.join(tmp, "meso")).load()
     start = dt.date.today() - dt.timedelta(days=6 * 7)
     day_n = 0
@@ -561,9 +574,8 @@ def test_full_meso(tmp):
         analytics.detect_prs(db, plan)
         _, _, updates = coach.analyze_session(db, plan)
         plan["completed"] = True
-        db.data["history"].append(plan)
         db.update_records(plan)
-        db.archive_old()
+        db.commit_session(plan)
         coach.apply_updates(db, updates)
         coach.advance_calendar(db)
         day_n += 1
@@ -579,21 +591,48 @@ def test_full_meso(tmp):
           "bench prescription progressed to %g" % bench.get("weight", 0))
     db.save()
 
-    # archiving: shrink the window, verify old sessions stream from disk
-    n_before = len(db.data["history"])
+    # live window is compact summaries; full sessions live in the archive
+    check(all(s.get("summary") for s in db.data["history"]),
+          "live window holds only summaries")
+    check(sum(1 for _ in db.iter_all_sessions()) == day_n,
+          "every full session is in the archive (%d)" % day_n)
+    doc_bytes = len(json.dumps(db.data))
+    check(doc_bytes < 40000,
+          "live document stays small (%d bytes for %d sessions)" %
+          (doc_bytes, day_n))
+    # summarized history still feeds analytics identically
+    hist = analytics.exercise_sessions(db, "Bench Press")
+    check(len(hist) >= 5 and hist[-1]["best_e1rm"] > 0,
+          "exercise history readable from summaries (%d found)" % len(hist))
+    _, tons = analytics.weekly_series(db, "tonnage")
+    check(len(tons) >= 5 and all(t > 0 for t in tons),
+          "weekly tonnage series from summaries")
+
+    # trimming the window drops summaries without losing archived data
     lifetime_before = db.data["records"]["lifetime"]
     db.archive_keep = 8
     db.archive_old()
     db.save()
-    check(len(db.data["history"]) == 8,
-          "history windowed to 8 in RAM (was %d)" % n_before)
-    check(sum(1 for _ in db.iter_all_sessions()) == n_before,
-          "archived sessions stream back from disk")
+    check(len(db.data["history"]) == 8, "history windowed to 8 in RAM")
+    check(sum(1 for _ in db.iter_all_sessions()) == day_n,
+          "archive still holds every session after trim")
     check(db.data["records"]["lifetime"] == lifetime_before,
-          "records cache unaffected by archiving")
+          "records cache unaffected by trimming")
     db.rebuild_records()
     check(abs(db.data["records"]["lifetime"] - lifetime_before) < 0.01,
-          "cache rebuild from archive+live matches")
+          "cache rebuild from archive matches")
+
+    # legacy pre-summary profile migrates on load without losing sessions
+    raw = DB(os.path.join(tmp, "legacy"))
+    raw.load()
+    for s in [analytics_full_session(d) for d in range(3)]:
+        raw.data["history"].append(s)
+    raw.save()
+    mig = DB(os.path.join(tmp, "legacy")).load()
+    check(all(s.get("summary") for s in mig.data["history"]),
+          "legacy full history summarized on load")
+    check(sum(1 for _ in mig.iter_all_sessions()) == 3,
+          "migrated sessions preserved in archive")
 
 
 def test_demo_gen(tmp):
@@ -606,7 +645,9 @@ def test_demo_gen(tmp):
     check(db.data["program"]["name"] == "Push Pull Legs", "demo uses PPL")
     total = sum(1 for _ in db.iter_all_sessions())
     check(total > 40, "demo has many sessions (%d)" % total)
-    check(len(db.data["history"]) == 24, "demo live window matches device")
+    check(len(db.data["history"]) == 48, "demo live window matches device")
+    check(all(s.get("summary") for s in db.data["history"]),
+          "demo live window is summaries only")
     check(db.data["records"]["lifetime"] > 300000,
           "demo has a large lifetime tonnage")
     check(db.data["meso"]["number"] >= 2, "demo spans multiple mesocycles")

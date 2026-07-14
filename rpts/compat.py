@@ -188,9 +188,11 @@ def listdir_sorted(path):
 # -- json ---------------------------------------------------------------
 
 def json_dump(obj, f):
+    # compact on purpose: pretty-printing added ~40% pure whitespace, and
+    # the RP2040 has to fit the parsed document in RAM
     try:
-        json.dump(obj, f, indent=1)
-    except TypeError:  # MicroPython json has no indent
+        json.dump(obj, f, separators=(",", ":"))
+    except TypeError:  # MicroPython json may not take separators
         json.dump(obj, f)
 
 

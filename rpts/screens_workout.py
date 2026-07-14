@@ -320,9 +320,8 @@ def finish_session(app, session, post):
         "overall": [t for t, _ in overall],
         "prs": [p["text"] for p in prs],
     }
-    db.data["history"].append(session)
-    db.update_records(session)  # after detect_prs, which compares to cache
-    db.archive_old()
+    db.update_records(session)   # after detect_prs, which compares to cache
+    db.commit_session(session)   # full record -> archive; summary -> live
     coach.apply_updates(db, updates)
     coach.advance_calendar(db)
     db.data.pop("_active", None)
