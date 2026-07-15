@@ -66,9 +66,29 @@ class App:
             self.stack.pop()
         if not self.stack:
             self.running = False
+        elif len(self.stack) == 1:
+            self._unload_ui_modules()
 
     def pop_to_root(self):
         del self.stack[1:]
+        self._unload_ui_modules()
+
+    def _unload_ui_modules(self, force=False):
+        """Back at the home screen: drop the on-demand screen modules from
+        the module cache so their bytecode is reclaimed. On the RP2040
+        each family costs ~10-20 KB of heap; re-importing from the SD card
+        on next open is fast. Desktop keeps the cache (no RAM pressure,
+        and tests rely on quick navigation)."""
+        if not (compat.MICROPYTHON or force):
+            return
+        import sys as _sys
+        for name in ("rpts.screens_data", "rpts.screens_edit",
+                     "rpts.screens_workout"):
+            if name in _sys.modules:
+                del _sys.modules[name]
+        if compat.MICROPYTHON:
+            import gc
+            gc.collect()
 
     def replace(self, screen):
         if self.stack:

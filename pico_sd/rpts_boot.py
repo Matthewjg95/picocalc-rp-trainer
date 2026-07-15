@@ -114,7 +114,7 @@ def run():
     # after the first frame — opening a dashboard (lazy ~20 KB module
     # import) then OOMed. 14 summaries (~30 KB parsed) leaves the UI
     # real headroom, and still covers 2+ program cycles for the coach.
-    db = DB(DATA_DIR, archive_keep=14).load()
+    db = DB(DATA_DIR, archive_keep=14, bw_keep=60).load()
     _blog("phase: db loaded")
     s = db.data["settings"]
     if not s.get("pico_tuned"):

@@ -114,18 +114,21 @@ class HomeScreen(Screen):
                 cv.put(3, my, line, "accent")
                 my += 1
 
-    # dashboard/editor hotkey -> class name in rpts.screens_data
-    _DASH = {"r": "RecoveryScreen", "t": "TrendsScreen",
-             "c": "CalendarScreen", "k": "RecordsScreen",
-             "m": "MesoScreen", "g": "GoalsScreen",
-             "o": "ProgramScreen", "a": "AthletesScreen",
-             "x": "SettingsScreen"}
+    # hotkey -> (screen family, class). Families are separate modules so
+    # opening one dashboard doesn't load every screen's code; the app
+    # unloads the family again when we come back home.
+    _DASH = {"r": ("d", "RecoveryScreen"), "t": ("d", "TrendsScreen"),
+             "c": ("d", "CalendarScreen"), "k": ("d", "RecordsScreen"),
+             "m": ("d", "MesoScreen"), "g": ("e", "GoalsScreen"),
+             "o": ("e", "ProgramScreen"), "a": ("e", "AthletesScreen"),
+             "x": ("e", "SettingsScreen")}
 
-    def _open(self, cls_name):
-        # import the dashboard module only on first use, to keep it off
-        # the heap while the user is on the home screen
-        from . import screens_data
-        self.app.push(getattr(screens_data, cls_name)(self.app))
+    def _open(self, family, cls_name):
+        if family == "d":
+            from . import screens_data as mod
+        else:
+            from . import screens_edit as mod
+        self.app.push(getattr(mod, cls_name)(self.app))
 
     def on_key(self, k):
         app = self.app
@@ -133,7 +136,8 @@ class HomeScreen(Screen):
         if kl == "s" or k == "ENTER":
             self.start_workout()
         elif kl in self._DASH:
-            self._open(self._DASH[kl])
+            family, cls_name = self._DASH[kl]
+            self._open(family, cls_name)
         elif kl == "b":
             t = app.prompt("Bodyweight (%s)" % app.units,
                            "%g" % app.db.data["athlete"].get("bodyweight",

@@ -64,9 +64,10 @@ class DB:
     always holds the flat document for the active profile, so the rest of
     the app is unaware profiles exist."""
 
-    def __init__(self, data_dir, archive_keep=200):
+    def __init__(self, data_dir, archive_keep=200, bw_keep=400):
         self.root = data_dir
         self.archive_keep = archive_keep
+        self.bw_keep = bw_keep  # bodyweight-log entries kept in RAM
         self.active = self._read_active()
         self._set_paths()
         self.data = default_data()
@@ -295,8 +296,8 @@ class DB:
                         f.write("\n")
             del hist[: len(hist) - self.archive_keep]
         bw = self.data["bodyweight_log"]
-        if len(bw) > 400:
-            del bw[: len(bw) - 400]
+        if len(bw) > self.bw_keep:
+            del bw[: len(bw) - self.bw_keep]
 
     def migrate_history_to_summaries(self):
         """One-time upgrade of a pre-summary profile: archive every full

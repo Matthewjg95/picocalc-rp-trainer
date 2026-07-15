@@ -289,6 +289,29 @@ def test_ui_navigation(tmp):
     check("Athlete" in db_c.list_profiles(),
           "original athlete still exists after UI create")
 
+    # on-device the screen-family modules are unloaded when returning
+    # home; force that path here and verify every screen still opens
+    db_u = seeded_db(os.path.join(tmp, "nav3"))
+    term = FakeTerm([], 53, 40)
+    app = App(term, db_u)
+    app.push(HomeScreen(app))
+    home = app.stack[0]
+    ok = True
+    for hot, (fam, cls) in sorted(home._DASH.items()):
+        home._open(fam, cls)
+        app.build_frame()
+        app.pop()                       # back home -> normally unloads
+        app._unload_ui_modules(force=True)
+        try:
+            home._open(fam, cls)        # must re-import cleanly
+            app.build_frame()
+            app.pop()
+            app._unload_ui_modules(force=True)
+        except Exception:
+            ok = False
+            break
+    check(ok, "every screen reopens after module unload (%s)" % cls)
+
     # graceful degradation: ascii + mono at PicoCalc-ish size
     db.data["settings"]["theme"] = "mono"
     db.data["settings"]["charset"] = "ascii"

@@ -112,7 +112,7 @@ def _run_session(db, iso, rnd, squat_pain):
 
 def generate(data_dir, months=8, seed=7):
     rnd = random.Random(seed)
-    db = DB(data_dir, archive_keep=ARCHIVE_KEEP)
+    db = DB(data_dir, archive_keep=ARCHIVE_KEEP, bw_keep=60)
     # start fresh Demo profile (inherits nothing; we set it up explicitly)
     db.load()
     if "Demo" in db.list_profiles():
