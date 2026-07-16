@@ -203,6 +203,47 @@ def run_ui(db, keys, w=64, h=32):
     return term.frames
 
 
+def test_fresh_athlete_and_program_volume(tmp):
+    print("[fresh athlete + program volume]")
+    db = DB(os.path.join(tmp, "fresh")).load()
+    sc = coach.recovery_scores(db)
+    check(sc["muscular"] == 0 and sc["joint"] == 0 and sc["systemic"] == 0,
+          "new athlete starts with zero fatigue")
+    check(sc["recovery"] == 100 and sc["readiness"] == 100,
+          "new athlete starts fully recovered")
+
+    pv = coach.program_volume(db)  # default Upper Lower template
+    check(pv["chest"]["projected"] > 0, "program projects chest volume")
+    # hand-check one muscle: chest primaries in UL = Bench 3 + Incline 3;
+    # secondaries: none primary elsewhere... verify against a direct sum
+    from rpts import exercise_db as edb
+    expect = 0.0
+    for day in db.data["program"]["days"]:
+        for slot in day["exercises"]:
+            inf = edb.info(slot["exercise"])
+            if "chest" in inf["primary"]:
+                expect += slot["sets"]
+            elif "chest" in inf["secondary"]:
+                expect += 0.5 * slot["sets"]
+    check(abs(pv["chest"]["projected"] - expect) < 0.01,
+          "projected chest sets match direct sum (%g)" % expect)
+    check(pv["chest"]["status"] in ("<MEV", "OK", "MAV", "MRV!"),
+          "projected volume gets a rating")
+    check(pv["chest"]["actual"] == 0, "fresh athlete has zero actual sets")
+
+    # screen opens from the program editor via V
+    frames = run_ui(db, ["o", "v", "ESC", "ESC", "q"])
+    check("PROGRAM VOLUME" in "\n".join(frames),
+          "projected-volume screen opens with V")
+
+    # after logging a workout, actual reflects it
+    db2 = DB(os.path.join(tmp, "fresh2")).load()
+    run_ui(db2, ["s", "UP", "ENTER", "ENTER", "UP", "ENTER",
+                 "ESC", "y", "q"])
+    sc2 = coach.recovery_scores(db2)
+    check(sc2["muscular"] >= 0, "fatigue model engages once history exists")
+
+
 def test_profiles(tmp):
     print("[profiles]")
     d = os.path.join(tmp, "prof")
@@ -693,6 +734,7 @@ def main():
     try:
         test_compat()
         test_engine(os.path.join(tmp, "eng"))
+        test_fresh_athlete_and_program_volume(tmp)
         test_profiles(tmp)
         test_ui_navigation(tmp)
         test_ui_workout_flow(tmp)

@@ -125,6 +125,17 @@ class DB:
             names = sorted(names + [self.active])
         return names or [self.active]
 
+    def _drop_data(self):
+        """Release the current profile's objects BEFORE building the next
+        one — holding both at once OOMed the RP2040 (crash in clone() while
+        the outgoing profile was still referenced)."""
+        self.data = None
+        try:
+            import gc
+            gc.collect()
+        except ImportError:
+            pass
+
     def switch_profile(self, name):
         if name == self.active:
             return
@@ -132,6 +143,7 @@ class DB:
         self.active = name
         self._write_active(name)
         self._set_paths()
+        self._drop_data()
         self.data = default_data()
         self.load()
 
@@ -142,6 +154,7 @@ class DB:
         self.active = name
         self._write_active(name)
         self._set_paths()
+        self._drop_data()
         self.data = default_data()
         if settings:                      # carry theme/units/pico-tuning over
             self.data["settings"] = settings

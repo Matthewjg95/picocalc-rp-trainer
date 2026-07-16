@@ -238,7 +238,14 @@ def csv_split(line):
 
 def clone(obj):
     """Deep copy of JSON-shaped data (no copy module on MicroPython)."""
-    return json.loads(json.dumps(obj))
+    try:
+        return json.loads(json.dumps(obj))
+    except MemoryError:
+        # tight heap (seen cloning a program template on-device):
+        # reclaim garbage and retry once before giving up
+        import gc
+        gc.collect()
+        return json.loads(json.dumps(obj))
 
 
 def gmax(iterable, default=0):

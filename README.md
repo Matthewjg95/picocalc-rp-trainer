@@ -99,6 +99,10 @@ Environment (desktop):
 
 ## What it does
 
+Every coaching rule — e1RM math, volume landmarks, the fatigue model,
+load/set progression, deloads, swaps — is documented in
+[docs/COACHING.md](docs/COACHING.md).
+
 - **RP mesocycles** — 4-8 week blocks, RIR ramps 3 → 3 → 2 → 1 → 0-1 →
   deload (half sets, ~90% load) automatically.
 - **Auto-regulation** — every muscle tracks weekly sets against MEV/MAV/MRV

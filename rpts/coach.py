@@ -62,6 +62,13 @@ def _avg(checks, field, default):
 def recovery_scores(db):
     """All values 0..100.  recovery/readiness: higher = better;
     muscular/joint/systemic: higher = more fatigued."""
+    if not db.data["history"]:
+        # a brand-new athlete has accumulated nothing: fatigue starts at
+        # zero and recovery at full, instead of the model's baseline for
+        # someone mid-training
+        return {"recovery": 100, "muscular": 0, "joint": 0, "systemic": 0,
+                "readiness": 100, "sleep_h": 8.0, "perf_trend": 0.0,
+                "vol_load": 0}
     checks = _recent_checkins(db)
     meso = db.data["meso"]
 
@@ -170,6 +177,43 @@ def suggest_weight(db, exercise, target):
 
 
 # -- set (volume) progression -------------------------------------------
+
+def program_volume(db):
+    """PROJECTED weekly sets per muscle from the saved program (each day
+    assumed to run once per week; secondary muscles count 0.5), alongside
+    the landmarks and this week's ACTUAL logged sets. This is the
+    'does my program design stack up against MEV/MAV/MRV?' view."""
+    projected = {}
+    for m in exercise_db.MUSCLES:
+        projected[m] = 0.0
+    for day in db.data["program"]["days"]:
+        for slot in day["exercises"]:
+            inf = exercise_db.info(slot["exercise"])
+            n = slot.get("sets", 0)
+            for m in inf["primary"]:
+                projected[m] = projected.get(m, 0) + n
+            for m in inf["secondary"]:
+                projected[m] = projected.get(m, 0) + 0.5 * n
+    actual = analytics.weekly_muscle_sets(db)
+    out = {}
+    for m in exercise_db.MUSCLES:
+        mv, mev, mav, mrv = landmarks(db, m)
+        p = projected.get(m, 0.0)
+        if p <= 0:
+            status = "-"
+        elif p < mev:
+            status = "<MEV"
+        elif p < mav:
+            status = "OK"
+        elif p < mrv:
+            status = "MAV"
+        else:
+            status = "MRV!"
+        out[m] = {"projected": p, "actual": actual.get(m, 0.0),
+                  "mv": mv, "mev": mev, "mav": mav, "mrv": mrv,
+                  "status": status}
+    return out
+
 
 def volume_status(db):
     """Per-muscle weekly sets vs landmarks, with a status word."""

@@ -130,11 +130,59 @@ class ProfileScreen(FormScreen):
         self.app.pop()
 
 
+# -- program volume check (projected vs actual) ---------------------------
+
+class ProgramVolumeScreen(Screen):
+    """Where the program design stacks up against the athlete's RP volume
+    landmarks: PROJECTED weekly sets per muscle (from the program, each
+    day once/week) next to ACTUAL sets logged this week."""
+
+    title = "PROGRAM VOLUME"
+    hints = "[ESC] Back"
+
+    def render(self, cv):
+        app, st = self.app, self.app.style
+        pv = coach.program_volume(app.db)
+        cv.put(3, 2, "Projected/wk from the program vs logged this week",
+               "dim")
+        cv.put(3, 3, "(assumes each program day runs once per week)",
+               "dim")
+        y = 5
+        cv.put(3, y, "MUSCLE", "title")
+        cv.put(15, y, rj("PROG", 5), "title")
+        cv.put(21, y, rj("WK", 4), "title")
+        cv.put(27, y, "MEV/MAV/MRV", "title")
+        cv.put(41, y, "RATING", "title")
+        y += 1
+        for m in sorted(pv, key=lambda x: -pv[x]["projected"]):
+            d = pv[m]
+            if y >= cv.h - 3:
+                break
+            attr = {"-": "dim", "<MEV": "warn", "OK": "good",
+                    "MAV": "good", "MRV!": "bad"}[d["status"]]
+            cv.put(3, y, lj(m[:11], 12), "dim" if d["status"] == "-"
+                   else "")
+            cv.put(15, y, rj("%g" % d["projected"], 5),
+                   attr if d["projected"] else "dim")
+            cv.put(21, y, rj("%g" % d["actual"], 4),
+                   "hi" if d["actual"] else "dim")
+            cv.put(27, y, "%2d/%2d/%2d" % (d["mev"], d["mav"], d["mrv"]),
+                   "dim")
+            cv.put(41, y, d["status"], attr)
+            y += 1
+        y += 1
+        lines = ["<MEV too little to grow    OK  productive",
+                 "MAV  upper band            MRV! over max"]
+        for ln in lines:
+            cv.put(3, y, widgets.clip(ln, cv.w - 6), "dim")
+            y += 1
+
+
 # -- program editor ------------------------------------------------------
 
 class ProgramScreen(Screen):
     title = "PROGRAM"
-    hints = "[Enter] Edit Day  [T] Template  [ESC] Back"
+    hints = "[Ent]Edit Day [T]emplate [V]olume [ESC]"
 
     def __init__(self, app):
         super().__init__(app)
@@ -172,6 +220,8 @@ class ProgramScreen(Screen):
             self.sel = (self.sel - 1) % len(days)
         elif k == "ENTER":
             app.push(DayScreen(app, self.sel))
+        elif kl == "v":
+            app.push(ProgramVolumeScreen(app))
         elif kl == "t":
             names = list(programs.TEMPLATES) + ["Custom"]
             cur = app.db.data["program"].get("name", "Custom")
