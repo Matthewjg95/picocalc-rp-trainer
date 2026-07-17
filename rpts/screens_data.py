@@ -39,6 +39,15 @@ class RecoveryScreen(Screen):
             cv.put(3, y, widgets.clip(st.bullet + " " + dl, cv.w - 6),
                    "warn")
             y += 2
+        # TUNE-01: show what the coach has learned about this athlete
+        cal = app.db.data.get("coach_cal") or {}
+        if cal.get("n") and abs(cal.get("bias", 0)) >= 0.005:
+            b = cal["bias"]
+            word = "faster" if b > 0 else "slower"
+            cv.put(3, y, widgets.clip(
+                "calibration %+d%% - you recover %s than modeled (n=%d)"
+                % (round(b * 100), word, cal["n"]), cv.w - 6), "dim")
+            y += 2
 
         # weekly volume vs landmarks
         widgets.frame(cv, 1, y, cv.w - 2, cv.h - y - 1, st,

@@ -104,6 +104,7 @@ def _run_session(db, iso, rnd, squat_pain):
     # process exactly like a real finished session
     analytics.detect_prs(db, session)
     _blocks, _overall, updates = coach.analyze_session(db, session)
+    coach.calibrate(db, session)
     db.update_records(session)
     db.commit_session(session)  # full -> archive, summary -> live window
     coach.apply_updates(db, updates)
