@@ -314,6 +314,7 @@ def finish_session(app, session, post):
     session["end_ts"] = compat.now_iso()
     prs = analytics.detect_prs(db, session)
     blocks, overall, updates = coach.analyze_session(db, session)
+    coach.calibrate(db, session)  # TUNE-01: learn from the survey answers
     session["analysis"] = {
         "blocks": [{"exercise": b["exercise"],
                     "lines": [t for t, _ in b["lines"]]} for b in blocks],

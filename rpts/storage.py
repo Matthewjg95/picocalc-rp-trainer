@@ -45,6 +45,10 @@ def default_data():
         # exercise -> {"weight": float, "sets": int} — the coach's current
         # working prescription, updated by auto-regulation after sessions.
         "prescriptions": {},
+        # TUNE-01: self-calibration of the recovery model. `bias` shifts
+        # predicted recovery (clamped ±0.15) and drifts slowly whenever the
+        # athlete's own post-session answers contradict the prediction.
+        "coach_cal": {"bias": 0.0, "n": 0},
         "records": empty_records(),
         "history": [],         # recent completed sessions (older -> archive)
         "bodyweight_log": [],  # {"date", "weight"}

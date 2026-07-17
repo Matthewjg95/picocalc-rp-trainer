@@ -31,7 +31,10 @@ guidelines, in `rpts/exercise_db.py`), scaled by experience level
 Weekly sets are counted per muscle: a set counts 1.0 for each primary
 muscle and 0.5 for each secondary. The Program editor's **[V] Volume**
 view compares your program's *projected* weekly sets against these
-landmarks (and against what you've actually logged this week).
+landmarks (and against what you've actually logged this week). The
+projection is scaled by your **measured training frequency** — a 6-day
+program run 4x/week only delivers 2/3 of its on-paper volume; until
+enough history exists, each day is assumed to run once per week.
 
 ## 3. Mesocycle RIR schedule
 
@@ -57,6 +60,15 @@ check-ins plus training load:
 These drive volume decisions and the coach's tone ("recovery excellent —
 continue progression" vs "prioritize sleep and food").
 
+**Self-calibration.** The model also learns the athlete: after each
+session, if it predicted good recovery but the sets ground toward failure
+(or the athlete flagged "too much"), a small bias drifts the predicted
+recovery down — and vice versa when a "poor recovery" prediction meets a
+session that felt easy. Steps are ±1 point, clamped to ±15, so the knob
+moves over weeks and can never dominate the model. The Recovery screen
+shows what has been learned ("you recover faster than modeled"). Uses only
+answers already collected — no extra input.
+
 ## 5. Load progression (per exercise)
 
 Judged on RIR accuracy of the most recent performance of that exercise:
@@ -66,10 +78,15 @@ Judged on RIR accuracy of the most recent performance of that exercise:
 | pain >= 5 reported | hold the load |
 | avg RIR >= target + 1 (too easy) | **add** one increment |
 | every set hit the rep ceiling | **add** one increment |
-| avg RIR <= target − 1.5 (much too hard) | **reduce** one increment |
+| much too hard — **two sessions in a row** | **reduce** one increment |
+| much too hard — first time | hold ("confirming before reducing") |
 | slight overshoot | hold, regain the target |
 | on target, e1RM rising | add one increment |
 | otherwise | hold and add reps |
+
+Reductions require two consecutive signals so a single bad night can't
+cut the load; additions stay single-signal on purpose — eager up,
+cautious down.
 
 Increments are per-equipment: lower-body compounds 10 lb / 5 kg, upper
 compounds 5 lb / 2.5 kg, isolations 2.5 lb / 1.25 kg.
