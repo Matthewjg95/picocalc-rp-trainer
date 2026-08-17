@@ -21,3 +21,6 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# original camera files (optimized copies live in docs/screenshots/)
+/docs/pictures/
