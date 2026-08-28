@@ -3,6 +3,19 @@
 Running list of what's done and what's planned, so nothing gets lost.
 Newest changes at the top of "Done".
 
+## Visibility / launch (posted to r/ClockworkPi 2026-07-17)
+- [ ] **Capture on-device screenshots for the README.** The PicoCalc
+      MicroPython firmware's terminal has a built-in framebuffer capture
+      bound to **Ctrl+U** — it writes a BMP while the app is running (no
+      serial needed; the CH340 port isn't bridged to the console anyway).
+      Plan: boot the Demo athlete, press Ctrl+U on the home dashboard,
+      Trends, Recovery, a live workout, and the PR celebration; bring the
+      SD card to the PC; convert BMPs to PNG and add a gallery section at
+      the top of the README. If the screen freezes after a capture
+      (internal-flash write quirk), reset once — the file is still saved.
+- [ ] Add a device photo (phone shot of the hardware) beside the captures
+- [ ] Triage reddit feedback into issues/roadmap items as it arrives
+
 ## Done (on the SD card)
 - **Summary-based live history** — fixed the MemoryError when switching to
   a data-heavy athlete: the live window now holds compact per-session

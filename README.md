@@ -5,23 +5,21 @@
 
 An offline, keyboard-first strength-training operating system with a
 Renaissance Periodization (RP) auto-regulation coach, styled like a piece of
-lab equipment. Pure Python 3 standard library — no dependencies, no network.
+lab equipment. It runs **natively on a stock ClockworkPi PicoCalc** under
+MicroPython — no phone, no companion app, no network — and on any desktop
+terminal. Pure Python standard library, no dependencies.
 
-```
-┌─ RP TRAINING SYSTEM v1.0 ─────────────────── MESO 1  WK 1/6 ─┐
-│┌─ STATUS ───────────────────┐┌─ NEXT SESSION ───────────────┐│
-││ Recovery  █████████░  90%  ││ Upper A   ·   3 RIR          ││
-││ Fatigue   ██░░░░░░░░  20%  ││ Bench Press         195 ↑+5  ││
-││ Readiness ████████░░  81%  ││ Barbell Row         175 ↑+5  ││
-││ MRV Used  ██░░░░░░░░  15%  ││ Overhead Press               ││
-││ Weight    180.0 lb         ││ Lat Pulldown                 ││
-││ Strength  ↑ +1.3%/session  ││ Lateral Raise                ││
-│└────────────────────────────┘└──────────────────────────────┘│
-│┌─ COACH ────────────────────────────────────────────────────┐│
-││ ▸ Recovery is strong — a productive session awaits.        ││
-│└────────────────────────────────────────────────────────────┘│
-└─ [S] Start Workout   [B] Log Bodyweight   [Q] Quit ──────────┘
-```
+### Running on the hardware
+
+| Home dashboard | Logging a workout |
+|---|---|
+| ![Home dashboard on the PicoCalc](docs/screenshots/home-dashboard.jpg) | ![Logging a set](docs/screenshots/workout-logging.jpg) |
+| Recovery / fatigue / readiness gauges, next session, and the coach's read on the day. | Target sets, reps and RIR per lift, live session tonnage, and what's up next. |
+
+| Coach analysis | Program editor |
+|---|---|
+| ![Session analysis](docs/screenshots/session-analysis.jpg) | ![Program editor](docs/screenshots/program-editor.jpg) |
+| After every session: what to change next time, and why. | Build and edit your split on-device; `[V]` checks it against MEV/MAV/MRV. |
 
 ## Run
 
