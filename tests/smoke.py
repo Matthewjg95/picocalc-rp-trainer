@@ -301,12 +301,13 @@ def test_coach_tuning(tmp):
           (scaled, base_pv))
 
     # --- TUNE-01: bias drifts from survey/RIR evidence ---------------------
+    from rpts import compat as _c
     db1 = DB(os.path.join(tmp, "t1")).load()
-    db1.commit_session(session("2026-07-01", rir=2.0))  # history exists
+    db1.commit_session(session(_c.date_add(_c.today(), -6), rir=2.0))
     check(db1.data["coach_cal"]["bias"] == 0.0, "calibration starts at 0")
     # model says recovered (good checkins) but sets ground to failure
     for i in range(3):
-        s = session("2026-07-%02d" % (3 + i), rir=0.5)
+        s = session(_c.date_add(_c.today(), -4 + i), rir=0.5)
         s["post"] = {"volume_down": True}
         coach.calibrate(db1, s)
     b = db1.data["coach_cal"]["bias"]
@@ -320,11 +321,99 @@ def test_coach_tuning(tmp):
     # clamp: many observations can't run away
     db1.data["coach_cal"]["bias"] = -0.14
     for i in range(20):
-        s = session("2026-08-01", rir=0.5)
+        s = session(_c.today(), rir=0.5)
         s["post"] = {"volume_down": True}
         coach.calibrate(db1, s)
     check(db1.data["coach_cal"]["bias"] >= -0.15001,
           "bias clamped at -0.15 (%.3f)" % db1.data["coach_cal"]["bias"])
+
+
+def test_layoff(tmp):
+    """TUNE-09: long training gaps reset the meso, scale loads, and read
+    as fresh — instead of prescribing a PR attempt at week-3 RIR."""
+    print("[layoff]")
+    from rpts import compat
+
+    def sess(db, date, w):
+        return {"date": date, "week": db.data["meso"]["week"], "meso": 1,
+                "day": "D", "checkin": {"sleep": 7.5, "stress": 3,
+                                        "energy": 7, "motivation": 7,
+                                        "joint_pain": 0},
+                "post": {}, "completed": True,
+                "entries": [{"exercise": "Back Squat", "target_sets": 3,
+                             "target_reps": [6, 10], "target_rir": 2.0,
+                             "sets": [{"weight": w, "reps": 8, "rir": 2.0,
+                                       "pain": 0, "difficulty": 6,
+                                       "notes": ""} for _ in range(3)]}]}
+
+    db = DB(os.path.join(tmp, "lay")).load()
+    start = compat.date_add(compat.today(), -111)
+    w = 225
+    for i in range(9):
+        d = compat.date_add(start, i * 2)
+        db.update_records(sess(db, d, w))
+        db.commit_session(sess(db, d, w))
+        coach.advance_calendar(db)
+        w += 10
+    db.data["prescriptions"]["Back Squat"] = {"weight": 315.0, "sets": 5}
+    week_before = db.data["meso"]["week"]
+    check(week_before > 1, "meso had advanced before the break")
+
+    lay = coach.check_layoff(db)
+    check(lay is not None and lay["days"] >= 90, "95-day gap detected")
+    check(lay["factor"] == 0.75, "90+ day tier applies 75% load")
+    p = db.data["prescriptions"]["Back Squat"]
+    check(p["weight"] == 235.0, "315 scaled to 235 on the 5 lb grid "
+          "(got %s)" % p["weight"])
+    check("sets" not in p, "accumulated set increases dropped (28+ days)")
+    check(db.data["meso"]["week"] == 1 and db.data["meso"]["day_index"] == 0,
+          "mesocycle reset to week 1")
+    rir, label = coach.target_rir(1, db.data["meso"]["weeks"])
+    check(label == "3 RIR", "comeback week targets 3 RIR")
+
+    wt, d, why = coach.suggest_weight(db, "Back Squat", rir)
+    check(wt == 235.0 and d == 0, "suggestion holds the scaled load")
+    check("days off" in why.lower() or "back after" in why.lower(),
+          "reason explains the ramp-in (%s)" % why)
+
+    sc = coach.recovery_scores(db)
+    check(sc["muscular"] == 0 and sc["recovery"] == 100,
+          "fatigue reads fresh after 14+ days off")
+
+    p_w = p["weight"]
+    coach.check_layoff(db)
+    check(db.data["prescriptions"]["Back Squat"]["weight"] == p_w,
+          "second check never rescales (no compounding)")
+
+    # home screen announces it; completing a workout clears the ramp
+    frames = run_ui(db, ["s", "UP", "ENTER", "ENTER", "UP", "ENTER",
+                         "f", "UP", "ENTER", "ENTER", "q"])
+    joined = chr(10).join(frames)
+    check("Back after" in joined, "home shows the comeback note")
+    check("layoff" not in db.data, "first session back clears the flag")
+    check(db.data["history"][-1]["date"] == compat.today(),
+          "comeback session committed")
+
+    # short breaks are just life — nothing changes
+    db2 = DB(os.path.join(tmp, "lay2")).load()
+    db2.commit_session(sess(db2, compat.date_add(compat.today(), -5), 200))
+    check(coach.check_layoff(db2) is None, "5-day gap: no adjustment")
+
+    # zero-load (bodyweight) exercises never get "+5 lb" suggestions
+    dbw = DB(os.path.join(tmp, "layb")).load()
+    sb = sess(dbw, compat.date_add(compat.today(), -2), 0.0)
+    sb["entries"][0]["exercise"] = "Push-Up"
+    dbw.commit_session(sb)
+    w, d, why = coach.suggest_weight(dbw, "Push-Up", 2.0)
+    check(w is None and d == 0 and "reps" in why.lower(),
+          "bodyweight movement suggests reps, not load (%s)" % why)
+
+    # wrong-clock protection: out-of-order commits stay date-sorted
+    db3 = DB(os.path.join(tmp, "lay3")).load()
+    db3.commit_session(sess(db3, "2026-08-20", 200))
+    db3.commit_session(sess(db3, "2026-08-10", 200))  # clock was wrong
+    dates = [x["date"] for x in db3.data["history"]]
+    check(dates == sorted(dates), "history stays date-ordered (%s)" % dates)
 
 
 def test_profiles(tmp):
@@ -819,6 +908,7 @@ def main():
         test_engine(os.path.join(tmp, "eng"))
         test_fresh_athlete_and_program_volume(tmp)
         test_coach_tuning(tmp)
+        test_layoff(tmp)
         test_profiles(tmp)
         test_ui_navigation(tmp)
         test_ui_workout_flow(tmp)

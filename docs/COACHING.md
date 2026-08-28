@@ -108,14 +108,34 @@ After each session, per exercise:
 - systemic fatigue >= 85%, or
 - strength trending down while recovery < 40%
 
-## 8. Pain-driven exercise swaps
+## 8. Layoffs — coming back after time off
+
+Real training has breaks (travel, illness, life). The coach detects the
+gap from the last logged session date — automatically, no input needed:
+
+| days off | what happens |
+|---|---|
+| up to 10 | nothing — a missed week is just life |
+| 11–27 | fresh mesocycle at week 1 (3 RIR); loads x0.93 |
+| 28–89 | fresh meso; loads x0.85; accumulated set increases dropped |
+| 90+ | fresh meso; loads x0.75; ramp-in messaging |
+
+The asymmetry is deliberate: strength survives a break far better than
+work capacity and connective-tissue tolerance, so the comeback leans on
+reduced volume and higher RIR more than on the load cut. Fatigue gauges
+read fresh after 14+ days off (fatigue can't persist through a break).
+The adjustment applies once per gap, the home screen explains it
+("Back after 95 days — fresh meso at 75% load"), and the first completed
+session ends the ramp and resumes normal progression.
+
+## 9. Pain-driven exercise swaps
 
 If an exercise logs pain >= 4 in two consecutive sessions, the coach
 suggests the next exercise in its swap chain (ordered by decreasing joint
 stress, filtered by your equipment) that has no pain history — e.g.
 Back Squat → Hack Squat → Leg Press → Safety Bar Squat.
 
-## 9. Session analysis
+## 10. Session analysis
 
 After every workout the coach prints, per exercise: performance vs last
 time (e1RM delta), RIR accuracy, pain flags with swap suggestions, and

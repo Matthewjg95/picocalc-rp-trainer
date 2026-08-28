@@ -295,6 +295,9 @@ class DB:
             f.write(json.dumps(session))
             f.write("\n")
         self.data["history"].append(analytics.summarize_session(session))
+        # keep the window date-ordered: a session logged after a clock
+        # mishap must not masquerade as the "most recent" performance
+        self.data["history"].sort(key=lambda s: s["date"])
         self.archive_old()
 
     def archive_old(self):

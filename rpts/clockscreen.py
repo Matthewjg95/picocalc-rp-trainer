@@ -74,3 +74,10 @@ class ClockScreen(FormScreen):
         except OSError:
             pass
         self.app.pop()
+
+    def cancel(self):
+        # a 2021 date would scramble the training log's ordering AND fake
+        # a "layoff" — refuse to skip until the clock is plausible
+        if time.localtime()[0] < 2025:
+            return
+        FormScreen.cancel(self)

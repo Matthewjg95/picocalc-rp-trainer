@@ -323,6 +323,7 @@ def finish_session(app, session, post):
     }
     db.update_records(session)   # after detect_prs, which compares to cache
     db.commit_session(session)   # full record -> archive; summary -> live
+    db.data.pop("layoff", None)  # first session back ends the ramp-in
     coach.apply_updates(db, updates)
     coach.advance_calendar(db)
     db.data.pop("_active", None)

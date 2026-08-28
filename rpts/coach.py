@@ -69,6 +69,12 @@ def recovery_scores(db):
         return {"recovery": 100, "muscular": 0, "joint": 0, "systemic": 0,
                 "readiness": 100, "sleep_h": 8.0, "perf_trend": 0.0,
                 "vol_load": 0}
+    # TUNE-09: training fatigue cannot persist through a long break — after
+    # 14+ days off the gauges read fresh, not "mid-block"
+    if compat.date_diff(today(), db.data["history"][-1]["date"]) >= 14:
+        return {"recovery": 100, "muscular": 0, "joint": 0, "systemic": 0,
+                "readiness": 100, "sleep_h": 8.0, "perf_trend": 0.0,
+                "vol_load": 0}
     checks = _recent_checkins(db)
     meso = db.data["meso"]
 
@@ -189,12 +195,21 @@ def suggest_weight(db, exercise, target):
     """
     units = db.data["settings"]["units"]
     presc = db.data["prescriptions"].get(exercise, {})
+    lay = db.data.get("layoff")
+    if lay and presc.get("weight"):
+        # TUNE-09: coming back from a break — the pre-scaled prescription
+        # IS the plan; months-old RIR history must not add load on top
+        return presc["weight"], 0.0,             "Back after %d days off — ramping in at reduced load."             % lay.get("days", 0)
     hist = analytics.exercise_sessions(db, exercise)
     if not hist:
         w = presc.get("weight")
         return w, 0.0, "First exposure — establish a baseline."
     last = hist[-1]
     base = presc.get("weight") or last["top_weight"]
+    if not base:
+        # logged at bodyweight (0 load): "add 5 lb" would be nonsense —
+        # until the dedicated bodyweight mode lands, progress via reps
+        return None, 0.0, "Bodyweight movement — progress by adding reps."
     inc = exercise_db.increment(exercise, units)
     diff = last["avg_rir"] - last["target_rir"]  # + = easier than planned
 
@@ -387,6 +402,53 @@ def plan_workout(db):
     }
 
 
+# -- layoffs (TUNE-09) ----------------------------------------------------
+
+# (min days off, load multiplier) — checked top-down. Strength survives a
+# break far better than work capacity and connective-tissue tolerance do,
+# so the comeback leans on reduced volume and RIR (fresh meso at 3 RIR,
+# set counts back to the program's baseline) more than on the load cut.
+LAYOFF_TIERS = ((90, 0.75), (28, 0.85), (11, 0.93))
+
+
+def check_layoff(db):
+    """Detect a long training gap and restart safely: scale every working
+    weight, drop accumulated set increases (28+ days), and reset the
+    mesocycle to week 1 / 3 RIR. Runs once per gap (flagged until the
+    first session back clears it); fully automatic — no user input."""
+    hist = db.data["history"]
+    if not hist:
+        return None
+    gap = compat.date_diff(today(), hist[-1]["date"])
+    lay = db.data.get("layoff")
+    if lay:
+        if gap >= 11:
+            lay["days"] = gap      # keep the message honest; never rescale
+        return lay
+    if gap < 11:
+        return None
+    factor = LAYOFF_TIERS[-1][1]
+    for days, f in LAYOFF_TIERS:
+        if gap >= days:
+            factor = f
+            break
+    units = db.data["settings"]["units"]
+    for name, p in db.data["prescriptions"].items():
+        w = p.get("weight")
+        if w:
+            grid = exercise_db.increment(name, units) / 2.0
+            p["weight"] = max(grid, round((w * factor) / grid) * grid)
+        if gap >= 28 and "sets" in p:
+            del p["sets"]          # back to the program's own set counts
+    meso = db.data["meso"]
+    meso["week"] = 1
+    meso["day_index"] = 0
+    meso["started"] = today()
+    db.data["layoff"] = {"days": gap, "factor": factor, "on": today()}
+    db.save()
+    return db.data["layoff"]
+
+
 def advance_calendar(db):
     """Move the meso pointer after a completed session."""
     meso = db.data["meso"]
@@ -520,6 +582,8 @@ def _suggest_after(db, entry, session):
     inc = exercise_db.increment(name, units)
     sets = entry["sets"]
     top = gmax((s.get("weight", 0) for s in sets))
+    if not top:
+        return None, 0, "Bodyweight movement — progress by adding reps."
     rirs = [s.get("rir", 0) for s in sets]
     avg_rir = sum(rirs) / len(rirs) if rirs else 0
     diff = avg_rir - entry.get("target_rir", 2)
