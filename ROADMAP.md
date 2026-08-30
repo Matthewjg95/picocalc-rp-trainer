@@ -3,6 +3,18 @@
 Running list of what's done and what's planned, so nothing gets lost.
 Newest changes at the top of "Done".
 
+
+## 2026 Hackaday Retrocomputing Challenge (deferred)
+
+- [ ] Resume the contest pass in late September or early October.
+- [ ] Keep the working RP2040 build as the submission baseline.
+- [ ] Complete the bounded retro UI, optional Pico 2 decision gate, validation,
+      media, and Hackaday.io submission plan in
+      [docs/HACKADAY_RETROCOMPUTING_2026.md](docs/HACKADAY_RETROCOMPUTING_2026.md).
+- Deadline: **October 27, 2026 at 10:00 PM PDT**.
+- Scope is documentation-only until deliberately resumed; do not pull contest
+  polish into unrelated feature work.
+
 ## Visibility / launch (posted to r/ClockworkPi 2026-07-17)
 - [ ] **Capture on-device screenshots for the README.** The PicoCalc
       MicroPython firmware's terminal has a built-in framebuffer capture
