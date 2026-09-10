@@ -9,6 +9,21 @@ lab equipment. It runs **natively on a stock ClockworkPi PicoCalc** under
 MicroPython — no phone, no companion app, no network — and on any desktop
 terminal. Pure Python standard library, no dependencies.
 
+## 2026 Hackaday Retrocomputing Contest
+
+Planned entry: **PicoCalc RP Trainer: An Offline Gym Computer**, targeting the
+**Modern Retro** honorable-mention category.
+
+- **Status:** deferred / documented only; submission not yet confirmed.
+- **Deadline:** October 27, 2026 at 10:00 PM PDT, verified against the
+  [official contest page](https://hackaday.io/contest/206399-retrocomputing-contest)
+  on September 10, 2026.
+- **Resume:** late September or early October. Keep the working stock RP2040
+  build as the baseline; focus on bounded retro UI polish, device validation,
+  photos, a short demo, and the Hackaday.io write-up. Pico 2 evaluation is optional.
+- **Plan and checklist:** [Hackaday contest plan](docs/HACKADAY_RETROCOMPUTING_2026.md)
+  and [roadmap](ROADMAP.md#2026-hackaday-retrocomputing-challenge-deferred).
+
 ### Running on the hardware
 
 | Home dashboard | Logging a workout |
