@@ -12,6 +12,12 @@ from .app import Screen
 class HomeScreen(Screen):
     hints = "[S]tart  [B] Bodyweight  [Q]uit"
 
+    def __init__(self, app):
+        Screen.__init__(self, app)
+        # TUNE-09: one boot-time pass — detect a long training gap and
+        # apply the comeback adjustments before anything is planned
+        coach.check_layoff(app.db)
+
     def render(self, cv):
         app, st = self.app, self.app.style
         db = app.db
@@ -73,7 +79,14 @@ class HomeScreen(Screen):
 
         # -- COACH (full width, wrapped) ----------------------------------
         cy = ny + nh
-        msg = coach.deload_recommendation(db)
+        lay = db.data.get("layoff")
+        if lay:
+            msg = ("Back after %d days - fresh meso at %d%% load. "
+                   "Expect soreness; ease in." %
+                   (lay.get("days", 0),
+                    round(lay.get("factor", 1.0) * 100)))
+        else:
+            msg = coach.deload_recommendation(db)
         if not msg:
             if sc["recovery"] >= 70:
                 msg = "Recovery is strong - a productive session awaits."

@@ -314,6 +314,7 @@ def finish_session(app, session, post):
     session["end_ts"] = compat.now_iso()
     prs = analytics.detect_prs(db, session)
     blocks, overall, updates = coach.analyze_session(db, session)
+    coach.calibrate(db, session)  # TUNE-01: learn from the survey answers
     session["analysis"] = {
         "blocks": [{"exercise": b["exercise"],
                     "lines": [t for t, _ in b["lines"]]} for b in blocks],
@@ -322,6 +323,7 @@ def finish_session(app, session, post):
     }
     db.update_records(session)   # after detect_prs, which compares to cache
     db.commit_session(session)   # full record -> archive; summary -> live
+    db.data.pop("layoff", None)  # first session back ends the ramp-in
     coach.apply_updates(db, updates)
     coach.advance_calendar(db)
     db.data.pop("_active", None)

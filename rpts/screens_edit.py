@@ -145,8 +145,13 @@ class ProgramVolumeScreen(Screen):
         pv = coach.program_volume(app.db)
         cv.put(3, 2, "Projected/wk from the program vs logged this week",
                "dim")
-        cv.put(3, 3, "(assumes each program day runs once per week)",
-               "dim")
+        freq = coach.training_frequency(app.db)
+        if freq:
+            cv.put(3, 3, "(scaled to your measured ~%.1f sessions/wk)"
+                   % freq, "dim")
+        else:
+            cv.put(3, 3, "(assumes each program day runs once per week)",
+                   "dim")
         y = 5
         cv.put(3, y, "MUSCLE", "title")
         cv.put(15, y, rj("PROG", 5), "title")

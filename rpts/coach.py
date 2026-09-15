@@ -9,7 +9,7 @@ Responsibilities:
   * pain-driven exercise swap suggestions
   * end-of-session written analysis (every recommendation is explained)
 """
-from . import analytics, exercise_db
+from . import analytics, compat, exercise_db
 from .compat import date_add, gmax, now_iso, today
 
 EXPERIENCE_SCALE = {"beginner": 0.75, "intermediate": 1.0, "advanced": 1.15}
@@ -69,6 +69,12 @@ def recovery_scores(db):
         return {"recovery": 100, "muscular": 0, "joint": 0, "systemic": 0,
                 "readiness": 100, "sleep_h": 8.0, "perf_trend": 0.0,
                 "vol_load": 0}
+    # TUNE-09: training fatigue cannot persist through a long break — after
+    # 14+ days off the gauges read fresh, not "mid-block"
+    if compat.date_diff(today(), db.data["history"][-1]["date"]) >= 14:
+        return {"recovery": 100, "muscular": 0, "joint": 0, "systemic": 0,
+                "readiness": 100, "sleep_h": 8.0, "perf_trend": 0.0,
+                "vol_load": 0}
     checks = _recent_checkins(db)
     meso = db.data["meso"]
 
@@ -106,6 +112,11 @@ def recovery_scores(db):
                      + 0.20 * week_pos - clamp(perf * 4, -0.1, 0.1))
     recovery = clamp(1.0 - (0.45 * muscular + 0.25 * systemic
                             + 0.15 * joint) + 0.15 * (sleep - 0.75))
+    # TUNE-01: personal calibration learned from the athlete's own
+    # post-session feedback (see calibrate()) — shifts predicted recovery
+    # up/down for people who recover faster/slower than the model assumes
+    recovery = clamp(recovery +
+                     (db.data.get("coach_cal") or {}).get("bias", 0.0))
     readiness = clamp(0.55 * recovery + 0.20 * energy + 0.15 * motivation
                       + 0.10 * (1 - stress))
     return {
@@ -118,6 +129,40 @@ def recovery_scores(db):
         "perf_trend": perf,
         "vol_load": round(vol_load * 100),
     }
+
+
+# -- self-calibration (TUNE-01) ------------------------------------------
+
+def calibrate(db, session):
+    """Nudge the recovery model toward the athlete's lived experience,
+    using ONLY answers already collected — zero extra steps.
+
+    Each finished session is one observation: if the model said recovery
+    was fine but the athlete's sets ground down / they flagged 'too much',
+    the model is too optimistic (bias down); if the model said recovery
+    was poor but they cruised / flagged 'too easy', it's too pessimistic
+    (bias up). Steps are tiny (0.01) and clamped to ±0.15, so the knob
+    drifts over weeks, not sessions, and can never dominate the model."""
+    post = session.get("post") or {}
+    cal = db.data.setdefault("coach_cal", {"bias": 0.0, "n": 0})
+    # how the session actually felt, from logged RIR vs targets
+    diffs = []
+    for e in session.get("entries", []):
+        sets = e.get("sets") or []
+        rirs = [s.get("rir", 0) for s in sets]
+        if rirs:
+            diffs.append(sum(rirs) / len(rirs) - e.get("target_rir", 2))
+    avg_diff = sum(diffs) / len(diffs) if diffs else 0.0
+    too_hard = bool(post.get("volume_down")) or avg_diff <= -1.0
+    too_easy = bool(post.get("volume_up")) or avg_diff >= 1.0
+    sc = recovery_scores(db)
+    step = 0.01
+    if sc["recovery"] >= 60 and too_hard and not too_easy:
+        cal["bias"] = max(-0.15, cal["bias"] - step)
+        cal["n"] += 1
+    elif sc["recovery"] < 45 and too_easy and not too_hard:
+        cal["bias"] = min(0.15, cal["bias"] + step)
+        cal["n"] += 1
 
 
 # -- deloads -----------------------------------------------------------
@@ -150,12 +195,21 @@ def suggest_weight(db, exercise, target):
     """
     units = db.data["settings"]["units"]
     presc = db.data["prescriptions"].get(exercise, {})
+    lay = db.data.get("layoff")
+    if lay and presc.get("weight"):
+        # TUNE-09: coming back from a break — the pre-scaled prescription
+        # IS the plan; months-old RIR history must not add load on top
+        return presc["weight"], 0.0,             "Back after %d days off — ramping in at reduced load."             % lay.get("days", 0)
     hist = analytics.exercise_sessions(db, exercise)
     if not hist:
         w = presc.get("weight")
         return w, 0.0, "First exposure — establish a baseline."
     last = hist[-1]
     base = presc.get("weight") or last["top_weight"]
+    if not base:
+        # logged at bodyweight (0 load): "add 5 lb" would be nonsense —
+        # until the dedicated bodyweight mode lands, progress via reps
+        return None, 0.0, "Bodyweight movement — progress by adding reps."
     inc = exercise_db.increment(exercise, units)
     diff = last["avg_rir"] - last["target_rir"]  # + = easier than planned
 
@@ -165,8 +219,17 @@ def suggest_weight(db, exercise, target):
         return base + inc, inc, \
             "RIR undershoot (easier than planned) — add %g %s." % (inc, units)
     if diff <= -1.5:
-        return max(0.0, base - inc), -inc, \
-            "Repeated RIR overshoot — reduce %g %s." % (inc, units)
+        # TUNE-03: one grindy session can just be a bad night. Reduce only
+        # when the PREVIOUS session of this lift also overshot; otherwise
+        # hold and let today confirm or clear the signal. (Adding weight
+        # stays single-signal on purpose — eager up, cautious down.)
+        prev_bad = len(hist) >= 2 and \
+            (hist[-2]["avg_rir"] - hist[-2]["target_rir"]) <= -1.0
+        if prev_bad:
+            return max(0.0, base - inc), -inc, \
+                "Two hard sessions in a row — reduce %g %s." % (inc, units)
+        return base, 0.0, \
+            "Rough session — holding to confirm before reducing."
     if diff <= -0.5:
         return base, 0.0, "Slight RIR overshoot — keep weight identical."
     # on target: progress if the rep ceiling was reached
@@ -178,22 +241,48 @@ def suggest_weight(db, exercise, target):
 
 # -- set (volume) progression -------------------------------------------
 
+def training_frequency(db):
+    """Average sessions per week measured from the live history, or None
+    when there isn't enough data to be meaningful (< 4 sessions or < a
+    week of span)."""
+    hist = db.data["history"]
+    if len(hist) < 4:
+        return None
+    span = compat.date_diff(hist[-1]["date"], hist[0]["date"])
+    if span < 7:
+        return None
+    return (len(hist) - 1) * 7.0 / span
+
+
 def program_volume(db):
-    """PROJECTED weekly sets per muscle from the saved program (each day
-    assumed to run once per week; secondary muscles count 0.5), alongside
+    """PROJECTED weekly sets per muscle from the saved program, alongside
     the landmarks and this week's ACTUAL logged sets. This is the
-    'does my program design stack up against MEV/MAV/MRV?' view."""
-    projected = {}
+    'does my program design stack up against MEV/MAV/MRV?' view.
+
+    TUNE-05: the projection is scaled by the athlete's MEASURED training
+    frequency — a 6-day program run 4x/week delivers 2/3 of its on-paper
+    volume. With no history yet, each day is assumed once per week."""
+    per_cycle = {}
     for m in exercise_db.MUSCLES:
-        projected[m] = 0.0
-    for day in db.data["program"]["days"]:
+        per_cycle[m] = 0.0
+    days = db.data["program"]["days"]
+    for day in days:
         for slot in day["exercises"]:
             inf = exercise_db.info(slot["exercise"])
             n = slot.get("sets", 0)
             for m in inf["primary"]:
-                projected[m] = projected.get(m, 0) + n
+                per_cycle[m] = per_cycle.get(m, 0) + n
             for m in inf["secondary"]:
-                projected[m] = projected.get(m, 0) + 0.5 * n
+                per_cycle[m] = per_cycle.get(m, 0) + 0.5 * n
+    freq = training_frequency(db)
+    scale = 1.0
+    if freq and days:
+        # cycles completed per week; clamped so one odd week can't
+        # produce a silly projection
+        scale = max(0.25, min(2.0, freq / len(days)))
+    projected = {}
+    for m in per_cycle:
+        projected[m] = round(per_cycle[m] * scale, 1)
     actual = analytics.weekly_muscle_sets(db)
     out = {}
     for m in exercise_db.MUSCLES:
@@ -311,6 +400,53 @@ def plan_workout(db):
         "checkin": {}, "post": {}, "entries": entries,
         "completed": False,
     }
+
+
+# -- layoffs (TUNE-09) ----------------------------------------------------
+
+# (min days off, load multiplier) — checked top-down. Strength survives a
+# break far better than work capacity and connective-tissue tolerance do,
+# so the comeback leans on reduced volume and RIR (fresh meso at 3 RIR,
+# set counts back to the program's baseline) more than on the load cut.
+LAYOFF_TIERS = ((90, 0.75), (28, 0.85), (11, 0.93))
+
+
+def check_layoff(db):
+    """Detect a long training gap and restart safely: scale every working
+    weight, drop accumulated set increases (28+ days), and reset the
+    mesocycle to week 1 / 3 RIR. Runs once per gap (flagged until the
+    first session back clears it); fully automatic — no user input."""
+    hist = db.data["history"]
+    if not hist:
+        return None
+    gap = compat.date_diff(today(), hist[-1]["date"])
+    lay = db.data.get("layoff")
+    if lay:
+        if gap >= 11:
+            lay["days"] = gap      # keep the message honest; never rescale
+        return lay
+    if gap < 11:
+        return None
+    factor = LAYOFF_TIERS[-1][1]
+    for days, f in LAYOFF_TIERS:
+        if gap >= days:
+            factor = f
+            break
+    units = db.data["settings"]["units"]
+    for name, p in db.data["prescriptions"].items():
+        w = p.get("weight")
+        if w:
+            grid = exercise_db.increment(name, units) / 2.0
+            p["weight"] = max(grid, round((w * factor) / grid) * grid)
+        if gap >= 28 and "sets" in p:
+            del p["sets"]          # back to the program's own set counts
+    meso = db.data["meso"]
+    meso["week"] = 1
+    meso["day_index"] = 0
+    meso["started"] = today()
+    db.data["layoff"] = {"days": gap, "factor": factor, "on": today()}
+    db.save()
+    return db.data["layoff"]
 
 
 def advance_calendar(db):
@@ -446,6 +582,8 @@ def _suggest_after(db, entry, session):
     inc = exercise_db.increment(name, units)
     sets = entry["sets"]
     top = gmax((s.get("weight", 0) for s in sets))
+    if not top:
+        return None, 0, "Bodyweight movement — progress by adding reps."
     rirs = [s.get("rir", 0) for s in sets]
     avg_rir = sum(rirs) / len(rirs) if rirs else 0
     diff = avg_rir - entry.get("target_rir", 2)
@@ -458,8 +596,16 @@ def _suggest_after(db, entry, session):
     if max_pain >= 5:
         return top, 0, "Keep weight identical until pain resolves."
     if missed and diff <= -1:
-        return max(0, top - inc), -inc, \
-            "Missed reps near failure — reduce %g %s." % (inc, units)
+        # TUNE-03: two-signal rule — only back off if the previous session
+        # of this lift also overshot its RIR target
+        prev = analytics.exercise_sessions(db, name)
+        prev_bad = bool(prev) and \
+            (prev[-1]["avg_rir"] - prev[-1]["target_rir"]) <= -1.0
+        if prev_bad:
+            return max(0, top - inc), -inc, \
+                "Missed reps two sessions running — reduce %g %s." % \
+                (inc, units)
+        return top, 0, "Rough day — holding to confirm before reducing."
     if diff <= -1:
         return top, 0, "Keep weight identical; regain the RIR target."
     if hit_ceiling or diff >= 1:
